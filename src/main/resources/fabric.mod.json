@@ -1,0 +1,28 @@
+{
+	"schemaVersion": 1,
+	"id": "rubixmod",
+	"version": "${version}",
+	"name": "RubixMod",
+	"description": "A Hypixel Skyblock client mod with HUD overlays and dungeon tools.",
+	"authors": [
+		"You"
+	],
+	"contact": {},
+	"license": "MIT",
+	"icon": "assets/rubixmod/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.rubixmod.RubixMod"
+		]
+	},
+	"mixins": [
+		"rubixmod.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.16.9",
+		"fabric-api": "*",
+		"minecraft": "~1.21.1",
+		"java": ">=21"
+	}
+}

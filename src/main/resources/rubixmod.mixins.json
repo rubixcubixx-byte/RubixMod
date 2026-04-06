@@ -1,0 +1,9 @@
+{
+  "required": false,
+  "package": "com.rubixmod.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}
