@@ -18,21 +18,22 @@ import java.util.concurrent.TimeUnit;
 
 public class HypixelApiFetcher {
 
-    private static final ScheduledExecutorService SCHEDULER =
-            Executors.newSingleThreadScheduledExecutor(new java.util.concurrent.ThreadFactory() {
-                public Thread newThread(Runnable r) {
-                    Thread t = new Thread(r, "RubixMod-API");
-                    t.setDaemon(true);
-                    return t;
-                }
-            });
+    private static ScheduledExecutorService scheduler = null;
 
-    private static boolean started = false;
+    private static ScheduledExecutorService newScheduler() {
+        return Executors.newSingleThreadScheduledExecutor(new java.util.concurrent.ThreadFactory() {
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, "RubixMod-API");
+                t.setDaemon(true);
+                return t;
+            }
+        });
+    }
 
     public static void start() {
-        if (started) return;
-        started = true;
-        SCHEDULER.scheduleAtFixedRate(new Runnable() {
+        if (scheduler != null && !scheduler.isShutdown()) return;
+        scheduler = newScheduler();
+        scheduler.scheduleAtFixedRate(new Runnable() {
             public void run() {
                 fetchBestiary();
             }
@@ -40,7 +41,8 @@ public class HypixelApiFetcher {
     }
 
     public static void fetchNow() {
-        SCHEDULER.execute(new Runnable() {
+        if (scheduler == null || scheduler.isShutdown()) return;
+        scheduler.execute(new Runnable() {
             public void run() {
                 fetchBestiary();
             }
@@ -48,8 +50,10 @@ public class HypixelApiFetcher {
     }
 
     public static void stop() {
-        SCHEDULER.shutdownNow();
-        started = false;
+        if (scheduler != null) {
+            scheduler.shutdownNow();
+            scheduler = null;
+        }
     }
 
     private static void fetchBestiary() {

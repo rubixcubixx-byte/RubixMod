@@ -180,19 +180,16 @@ public class KillTracker {
                 || loc.contains("dark thicket")) {
             result.add("Hub");
             result.add("Mythological Creatures");
-            result.add("Spooky Festival");
         }
         if (loc.contains("barn") || loc.contains("mushroom desert")
                 || loc.contains("farming island")) {
             result.add("The Farming Islands");
-            result.add("Spooky Festival");
         }
         if (loc.contains("garden")) {
             result.add("The Garden");
         }
         if (loc.contains("spider")) {
             result.add("Spider's Den");
-            result.add("Spooky Festival");
         }
         if (loc.contains("the end") || loc.contains("dragon's nest")
                 || loc.contains("void sepulture") || loc.contains("void slate")) {
@@ -218,7 +215,8 @@ public class KillTracker {
         if (loc.contains("crystal hollows") || loc.contains("goblin holdout")
                 || loc.contains("mithril deposits") || loc.contains("magma chamber")) {
             result.add("Crystal Hollows");
-            result.add("Fishing > Lava");
+            result.add("Dwarven Mines"); // Diamond Goblin, Goblin, etc. spawn in both
+            result.add("Fishing > Lava"); // Lava Blaze, Lava Pigman
         }
         if (loc.contains("the park") || loc.contains("howling cave")
                 || loc.contains("tranquil acres") || loc.contains("lonely island")) {
@@ -229,7 +227,6 @@ public class KillTracker {
         }
         if (loc.contains("backwater")) {
             result.add("Fishing > Backwater Bayou");
-            result.add("Fishing > Fishing");
         }
         if (loc.contains("catacombs") || loc.contains("dungeon")) {
             result.add("The Catacombs");
@@ -237,17 +234,15 @@ public class KillTracker {
         if (loc.contains("kuudra")) {
             result.add("Kuudra");
         }
-        if (loc.contains("jerry")) {
-            result.add("Jerry");
+        if (loc.contains("jerry") || loc.contains("workshop")) {
             result.add("Fishing > Winter");
         }
-        if (loc.contains("spooky")) {
-            result.add("Spooky Festival");
-        }
 
-        // Global: Jerry and general fishing mobs can appear anywhere
+        // These mobs/categories can appear anywhere
         result.add("Jerry");
         result.add("Fishing > Fishing");
+        result.add("Fishing > Fishing Festival");
+        result.add("Spooky Festival");
 
         return result;
     }

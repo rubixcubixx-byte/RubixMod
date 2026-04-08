@@ -86,7 +86,7 @@ public class BestiaryMobList {
 
         // --- Crystal Hollows ---
         CATEGORIES.put("Crystal Hollows", Arrays.asList(
-                "Automation", "Bal", "Boss Corleone", "Butterfly",
+                "Automaton", "Bal", "Boss Corleone", "Butterfly",
                 "Grunt", "Key Guardian", "Sludge", "Thyst", "Worm", "Yog"
         ));
 
@@ -140,12 +140,7 @@ public class BestiaryMobList {
                 "Fiery Scuttler", "Fire Eel", "Fireproof Witch", "Flaming Worm",
                 "Fried Chicken", "Lava Blaze", "Lava Flame", "Lava Leech",
                 "Lava Pigman", "Lord Jawbus", "Magma Slug", "Moogma",
-                "Phlegblast", "Pyroclastic Worm", "Ragnar\u00f6k", "Taurus", "Thunder"
-        ));
-
-        FISHING_SUBCATEGORY_KEYS.add("Fishing > Spooky Festival");
-        FISHING_SUBCATEGORIES.put("Fishing > Spooky Festival", Arrays.asList(
-                "Werewolf"
+                "Phlegblast", "Pyroclastic Worm", "Ragnarok", "Taurus", "Thunder"
         ));
 
         FISHING_SUBCATEGORY_KEYS.add("Fishing > Fishing Festival");

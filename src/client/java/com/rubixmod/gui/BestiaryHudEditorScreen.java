@@ -1,6 +1,6 @@
 package com.rubixmod.gui;
 
-import com.rubixmod.bestiary.BestiaryData;
+import com.rubixmod.bestiary.BestiaryMobList;
 import com.rubixmod.config.RubixConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -10,9 +10,7 @@ import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
-import java.util.Set;
 
 public class BestiaryHudEditorScreen extends Screen {
 
@@ -176,39 +174,61 @@ public class BestiaryHudEditorScreen extends Screen {
         dropdownItems.clear();
         List tracked = RubixConfig.get().trackedMobs;
 
-        // Build dropdown from actual BestiaryData categories
-        Set categories = BestiaryData.getCategories();
-        Iterator catIt = categories.iterator();
-        while (catIt.hasNext()) {
-            String cat = (String) catIt.next();
-            Set mobs = BestiaryData.getMobsInCategory(cat);
+        // Build dropdown from BestiaryMobList — always shows all mobs regardless of scan state
+        for (Object catObj : BestiaryMobList.CATEGORIES.keySet()) {
+            String cat = (String) catObj;
+            List mobs = (List) BestiaryMobList.CATEGORIES.get(cat);
 
-            // Check if any mob in this category is not yet tracked
-            boolean hasUntracked = false;
-            Iterator mobIt = mobs.iterator();
-            while (mobIt.hasNext()) {
-                String mob = (String) mobIt.next();
-                String key = cat + " > " + mob;
-                if (!tracked.contains(key)) { hasUntracked = true; break; }
-            }
-            if (!hasUntracked) continue;
+            if (cat.equals("Fishing")) {
+                // Fishing is a top-level collapsible that contains subcategory dropdowns
+                dropdownItems.add(new String[]{"category", "Fishing"});
+                if (expandedCategories.contains("Fishing")) {
+                    for (Object subKeyObj : BestiaryMobList.FISHING_SUBCATEGORY_KEYS) {
+                        String subKey = (String) subKeyObj;
+                        String subName = subKey.substring("Fishing > ".length());
+                        List subMobs = (List) BestiaryMobList.FISHING_SUBCATEGORIES.get(subKey);
 
-            dropdownItems.add(new String[]{"category", cat});
+                        boolean hasUntracked = false;
+                        for (Object mobObj : subMobs) {
+                            if (!tracked.contains(subKey + " > " + mobObj)) { hasUntracked = true; break; }
+                        }
+                        if (!hasUntracked) continue;
 
-            if (expandedCategories.contains(cat)) {
-                Iterator mobIt2 = mobs.iterator();
-                while (mobIt2.hasNext()) {
-                    String mob = (String) mobIt2.next();
-                    String key = cat + " > " + mob;
-                    if (!tracked.contains(key)) {
-                        dropdownItems.add(new String[]{"mob", key, mob});
+                        dropdownItems.add(new String[]{"fishing_sub", subKey, subName});
+                        if (expandedCategories.contains(subKey)) {
+                            for (Object mobObj : subMobs) {
+                                String mob = (String) mobObj;
+                                String key = subKey + " > " + mob;
+                                if (!tracked.contains(key)) {
+                                    dropdownItems.add(new String[]{"mob", key, mob});
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                if (mobs.isEmpty()) continue;
+                boolean hasUntracked = false;
+                for (Object mobObj : mobs) {
+                    if (!tracked.contains(cat + " > " + mobObj)) { hasUntracked = true; break; }
+                }
+                if (!hasUntracked) continue;
+
+                dropdownItems.add(new String[]{"category", cat});
+                if (expandedCategories.contains(cat)) {
+                    for (Object mobObj : mobs) {
+                        String mob = (String) mobObj;
+                        String key = cat + " > " + mob;
+                        if (!tracked.contains(key)) {
+                            dropdownItems.add(new String[]{"mob", key, mob});
+                        }
                     }
                 }
             }
         }
 
         if (dropdownItems.isEmpty()) {
-            dropdownItems.add(new String[]{"info", "Open /bestiary first!"});
+            dropdownItems.add(new String[]{"info", "All mobs are already tracked!"});
         }
 
         int maxVisible = 14;
@@ -231,15 +251,21 @@ public class BestiaryHudEditorScreen extends Screen {
                     && mouseY >= itemY && mouseY < itemY + ROW_HEIGHT;
 
             if ("category".equals(item[0])) {
+                // Top-level category header (orange)
                 g.fill(x, itemY, x + w, itemY + ROW_HEIGHT - 1, hovered ? 0xFF252525 : 0xFF1E1E1E);
                 String arrow = expandedCategories.contains(item[1]) ? "[-] " : "[+] ";
                 g.drawString(myFont, arrow + item[1], x + 6, itemY + 6, COLOR_ORANGE);
-            } else if ("mob".equals(item[0])) {
+            } else if ("fishing_sub".equals(item[0])) {
+                // Fishing subcategory header (indented, yellow-ish)
                 g.fill(x, itemY, x + w, itemY + ROW_HEIGHT - 1, hovered ? COLOR_DROPDOWN_HOVER : COLOR_DROPDOWN_BG);
-                // item[2] is the short mob name, item[1] is the full "Cat > Mob" key
-                g.drawString(myFont, "  " + item[2], x + 16, itemY + 6, COLOR_WHITE);
+                String arrow = expandedCategories.contains(item[1]) ? "[-] " : "[+] ";
+                g.drawString(myFont, "  " + arrow + item[2], x + 6, itemY + 6, 0xFFFFCC55);
+            } else if ("mob".equals(item[0])) {
+                // Selectable mob (indented)
+                g.fill(x, itemY, x + w, itemY + ROW_HEIGHT - 1, hovered ? COLOR_DROPDOWN_HOVER : COLOR_DROPDOWN_BG);
+                g.drawString(myFont, "    " + item[2], x + 16, itemY + 6, COLOR_WHITE);
             } else {
-                // info row
+                // Info row
                 g.fill(x, itemY, x + w, itemY + ROW_HEIGHT - 1, COLOR_DROPDOWN_BG);
                 g.drawString(myFont, item[1], x + 6, itemY + 6, COLOR_GRAY);
             }
@@ -298,7 +324,7 @@ public class BestiaryHudEditorScreen extends Screen {
                         int itemY = ddY + 2 + i * ROW_HEIGHT - dropdownScrollOffset;
                         if (my >= itemY && my < itemY + ROW_HEIGHT) {
                             String[] item = (String[]) dropdownItems.get(i);
-                            if ("category".equals(item[0])) {
+                            if ("category".equals(item[0]) || "fishing_sub".equals(item[0])) {
                                 if (expandedCategories.contains(item[1])) expandedCategories.remove(item[1]);
                                 else expandedCategories.add(item[1]);
                             } else if ("mob".equals(item[0])) {

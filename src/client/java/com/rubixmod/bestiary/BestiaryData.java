@@ -8,6 +8,8 @@ import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.*;
 import java.lang.reflect.Type;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 
 /**
@@ -17,14 +19,18 @@ import java.util.*;
 public class BestiaryData {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final File DATA_FILE = new File(
-            FabricLoader.getInstance().getConfigDir().toFile(), "bestiary_data.json"
-    );
+
+    private static File dataFile() {
+        Path dir = FabricLoader.getInstance().getConfigDir().resolve("rubixmod");
+        try { Files.createDirectories(dir); } catch (Exception ignored) {}
+        return dir.resolve("bestiary_data.json").toFile();
+    }
 
     // In-memory store: category -> mob -> [current, max]
     private static Map data = new LinkedHashMap();
 
     public static void load() {
+        File DATA_FILE = dataFile();
         if (!DATA_FILE.exists()) {
             data = new LinkedHashMap();
             return;
@@ -42,7 +48,7 @@ public class BestiaryData {
     }
 
     public static void save() {
-        try (Writer w = new FileWriter(DATA_FILE)) {
+        try (Writer w = new FileWriter(dataFile())) {
             GSON.toJson(data, w);
         } catch (Exception e) {
             RubixMod.LOGGER.error("RubixMod: Failed to save bestiary_data.json", e);
@@ -99,7 +105,7 @@ public class BestiaryData {
      * Returns null if the format is wrong.
      */
     public static String[] parseTrackedKey(String key) {
-        int idx = key.indexOf(" > ");
+        int idx = key.lastIndexOf(" > ");
         if (idx < 0) return null;
         String cat = key.substring(0, idx).trim();
         String mob = key.substring(idx + 3).trim();

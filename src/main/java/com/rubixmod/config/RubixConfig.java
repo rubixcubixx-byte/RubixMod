@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.*;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -15,6 +16,8 @@ public class RubixConfig {
 
     public boolean hudEnabled = true;
     public boolean bestiaryAlertsEnabled = true;
+    public boolean hudAutoTrack = false;
+    public boolean hudPerTierMode = false;
     public boolean dungeonScoreEnabled = false;
     public boolean blazeSolverEnabled = false;
     public boolean batDeathAlertEnabled = true;
@@ -45,14 +48,18 @@ public class RubixConfig {
         return instance;
     }
 
+    private static Path configFile() {
+        Path dir = FabricLoader.getInstance().getConfigDir().resolve("rubixmod");
+        try { Files.createDirectories(dir); } catch (Exception ignored) {}
+        return dir.resolve("rubixmod.json");
+    }
+
     public static void load() {
         try {
-            Path path = FabricLoader.getInstance().getConfigDir().resolve("rubixmod.json");
-            File file = path.toFile();
+            File file = configFile().toFile();
             if (file.exists()) {
                 try (Reader reader = new FileReader(file)) {
                     instance = GSON.fromJson(reader, RubixConfig.class);
-                    // Ensure lists are never null after load
                     if (instance.trackedMobs == null) instance.trackedMobs = new ArrayList<>();
                     if (instance.bestiaryKillData == null) instance.bestiaryKillData = new LinkedHashMap<>();
                 }
@@ -66,11 +73,8 @@ public class RubixConfig {
     }
 
     public static void save() {
-        try {
-            Path path = FabricLoader.getInstance().getConfigDir().resolve("rubixmod.json");
-            try (Writer writer = new FileWriter(path.toFile())) {
-                GSON.toJson(get(), writer);
-            }
+        try (Writer writer = new FileWriter(configFile().toFile())) {
+            GSON.toJson(get(), writer);
         } catch (Exception e) {
             e.printStackTrace();
         }

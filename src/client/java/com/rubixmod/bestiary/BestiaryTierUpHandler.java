@@ -29,6 +29,13 @@ public class BestiaryTierUpHandler {
     private static final ArrayList activePopups = new ArrayList();
     private static final int MAX_POPUPS = 8;
 
+    /** When true (HUD editor is open), getActivePopups() never removes expired entries. */
+    private static boolean previewMode = false;
+
+    public static void setPreviewMode(boolean enabled) {
+        previewMode = enabled;
+    }
+
     public static void onTierUp(String mobName, int newTier, int tiersGained) {
         activePopups.add(new TierUpEntry(mobName, newTier, tiersGained));
         if (activePopups.size() > MAX_POPUPS) {
@@ -53,12 +60,22 @@ public class BestiaryTierUpHandler {
     }
 
     public static ArrayList getActivePopups() {
-        for (int i = activePopups.size() - 1; i >= 0; i--) {
-            TierUpEntry entry = (TierUpEntry) activePopups.get(i);
-            if (entry.isExpired()) {
-                activePopups.remove(i);
+        // Don't remove entries while the HUD editor is open — the preview must stay visible
+        if (!previewMode) {
+            for (int i = activePopups.size() - 1; i >= 0; i--) {
+                TierUpEntry entry = (TierUpEntry) activePopups.get(i);
+                if (entry.isExpired()) {
+                    activePopups.remove(i);
+                }
             }
         }
+        ArrayList copy = new ArrayList();
+        copy.addAll(activePopups);
+        return copy;
+    }
+
+    /** Returns all popups without filtering expired ones — used by the HUD editor preview. */
+    public static ArrayList getRawPopups() {
         ArrayList copy = new ArrayList();
         copy.addAll(activePopups);
         return copy;

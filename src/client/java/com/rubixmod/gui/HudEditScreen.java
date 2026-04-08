@@ -27,6 +27,7 @@ public class HudEditScreen extends Screen {
     public HudEditScreen() {
         super(Component.literal("Edit HUD"));
         // Only add fake popups if alerts are enabled
+        BestiaryTierUpHandler.setPreviewMode(true);
         RubixConfig cfg = RubixConfig.get();
         if (cfg.bestiaryAlertsEnabled && BestiaryTierUpHandler.getActivePopups().isEmpty()) {
             BestiaryTierUpHandler.onTierUp("Zombie", 3, 1);
@@ -60,12 +61,12 @@ public class HudEditScreen extends Screen {
             int hudX = (int) cfg.bestiaryHudX;
             int hudY = (int) cfg.bestiaryHudY;
             int hudW = (int) (BestiaryHud.HUD_WIDTH * cfg.bestiaryHudScale);
-            int hudH = (int) (BestiaryHud.HUD_HEIGHT * cfg.bestiaryHudScale);
+            int hudH = (int) (BestiaryHud.getHudHeight(cfg.trackedMobs.size()) * cfg.bestiaryHudScale);
 
             g.fill(hudX - 2, hudY - 2, hudX + hudW + 2, hudY + hudH + 2,
                     hovered == 1 ? COLOR_HOVERED : COLOR_NORMAL);
             drawBorder(g, hudX - 2, hudY - 2, hudX + hudW + 2, hudY + hudH + 2, COLOR_BORDER);
-            BestiaryHud.renderBestiaryInfo(g, font);
+            BestiaryHud.renderBestiaryInfo(g, font, true);
             g.drawString(font, "Bestiary HUD", hudX, hudY - 14, COLOR_BORDER);
 
             if (hovered == 1) {
@@ -83,7 +84,7 @@ public class HudEditScreen extends Screen {
             g.fill(ax - aw / 2 - 2, ay - ah / 2 - 2, ax + aw / 2 + 2, ay + ah / 2 + 2,
                     hovered == 2 ? COLOR_HOVERED : COLOR_NORMAL);
             drawBorder(g, ax - aw / 2 - 2, ay - ah / 2 - 2, ax + aw / 2 + 2, ay + ah / 2 + 2, COLOR_BORDER);
-            BestiaryHud.renderTierUpPopups(g, font, width, height);
+            BestiaryHud.renderTierUpPopups(g, font, width, height, true);
             g.drawString(font, "Bestiary Alerts",
                     ax - font.width("Bestiary Alerts") / 2, ay - ah / 2 - 14, COLOR_BORDER);
 
@@ -120,7 +121,7 @@ public class HudEditScreen extends Screen {
                 cfg.bestiaryHudX = (float) (mouseX - dragOffsetX);
                 cfg.bestiaryHudY = (float) (mouseY - dragOffsetY);
                 cfg.bestiaryHudX = Math.max(0, Math.min(cfg.bestiaryHudX, width - BestiaryHud.HUD_WIDTH));
-                cfg.bestiaryHudY = Math.max(0, Math.min(cfg.bestiaryHudY, height - BestiaryHud.HUD_HEIGHT));
+                cfg.bestiaryHudY = Math.max(0, Math.min(cfg.bestiaryHudY, height - BestiaryHud.getHudHeight(cfg.trackedMobs.size())));
             } else {
                 cfg.alertsX = (float) (mouseX - dragOffsetX);
                 cfg.alertsY = (float) (mouseY - dragOffsetY);
@@ -170,8 +171,9 @@ public class HudEditScreen extends Screen {
 
     @Override
     public void onClose() {
-        RubixConfig.save();
+        BestiaryTierUpHandler.setPreviewMode(false);
         BestiaryTierUpHandler.clear();
+        RubixConfig.save();
         super.onClose();
     }
 
@@ -179,7 +181,7 @@ public class HudEditScreen extends Screen {
         int x = (int) cfg.bestiaryHudX;
         int y = (int) cfg.bestiaryHudY;
         int w = (int) (BestiaryHud.HUD_WIDTH * cfg.bestiaryHudScale);
-        int h = (int) (BestiaryHud.HUD_HEIGHT * cfg.bestiaryHudScale);
+        int h = (int) (BestiaryHud.getHudHeight(cfg.trackedMobs.size()) * cfg.bestiaryHudScale);
         return mx >= x - 2 && mx <= x + w + 2 && my >= y - 2 && my <= y + h + 2;
     }
 

@@ -2,8 +2,10 @@ package com.rubixmod;
 
 import com.rubixmod.bestiary.BestiaryData;
 import com.rubixmod.bestiary.BestiaryMenuReader;
+import com.rubixmod.bestiary.ChatListener;
 import com.rubixmod.bestiary.HypixelApiFetcher;
 import com.rubixmod.bestiary.KillTracker;
+import com.rubixmod.bestiary.TabListBestiaryReader;
 import com.rubixmod.command.RubixCommand;
 import com.rubixmod.config.RubixConfig;
 import com.rubixmod.dungeon.BatDeathDetector;
@@ -36,8 +38,14 @@ public class RubixMod implements ClientModInitializer {
         // Register bestiary menu reader (reads /bestiary GUI)
         BestiaryMenuReader.register();
 
+        // Register chat listener (detects tier-up messages)
+        ChatListener.register();
+
         // Register kill tracker (increments kills in-game)
         KillTracker.register();
+
+        // Register tab list bestiary reader (live kill count updates)
+        TabListBestiaryReader.register();
 
         // Register bat death detector
         BatDeathDetector.register();
