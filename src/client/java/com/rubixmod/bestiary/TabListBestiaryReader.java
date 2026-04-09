@@ -26,6 +26,13 @@ public class TabListBestiaryReader {
 
     private static int tickCount = 0;
 
+    /**
+     * Per-session kill counts last seen in the tab list.
+     * First time we see a mob this session we just record the count — no HUD touch.
+     * On subsequent reads, a changed count means you actually killed something.
+     */
+    private static final java.util.Map<String, Long> sessionCounts = new java.util.HashMap<>();
+
     public static void register() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null || client.getConnection() == null) return;
@@ -51,36 +58,73 @@ public class TabListBestiaryReader {
             String mobName = m.group(1).trim();
             boolean isMax  = m.group(5) != null; // matched "MAX"
 
-            // Resolve category and mob from BestiaryMobList
-            String[] catMob = findCategoryAndMob(mobName);
-            if (catMob == null) continue;
+            // Resolve ALL categories that contain this mob name.
+            // This handles mobs that share a name across categories (e.g. Enderman
+            // in "Your Island" and "The End") — we update whichever one has stored
+            // data and a changed kill count.
+            List<String[]> allMatches = findAllCategoryAndMob(mobName);
+            if (allMatches.isEmpty()) continue;
 
-            // Always use the stored max — never overwrite it from the tab list
-            long[] existing = BestiaryData.getKills(catMob[0], catMob[1]);
-            if (existing == null || existing[1] <= 0) continue; // no stored max, skip
-
-            long storedMax = existing[1];
-            long current;
-
-            if (isMax) {
-                // "MAX" means fully completed — treat as current == max
-                current = storedMax;
-            } else {
+            long tabCurrent = 0;
+            if (!isMax) {
                 try {
-                    current = Long.parseLong(m.group(3).replace(",", ""));
+                    tabCurrent = Long.parseLong(m.group(3).replace(",", ""));
                 } catch (NumberFormatException ignored) {
                     continue;
                 }
             }
 
-            // Only write if current kill count actually changed
+            // For mobs that appear in multiple categories (e.g. Enderman in "Your Island"
+            // and "The End"), pick the category whose stored kill count is closest to the
+            // tab list value — the mob you're actively grinding will always be closest.
+            // For MAX entries, only apply to categories already at their stored max.
+            // For unique mobs, just use whichever category has stored data.
+            String[] bestMatch = null;
+            long bestDiff = Long.MAX_VALUE;
+
+            for (String[] catMob : allMatches) {
+                long[] existing = BestiaryData.getKills(catMob[0], catMob[1]);
+                if (existing == null || existing[1] <= 0) continue;
+
+                if (isMax) {
+                    // Only apply MAX to a category that is already fully complete
+                    if (existing[0] >= existing[1]) {
+                        bestMatch = catMob;
+                        break;
+                    }
+                } else {
+                    long diff = Math.abs(existing[0] - tabCurrent);
+                    if (diff < bestDiff) {
+                        bestDiff = diff;
+                        bestMatch = catMob;
+                    }
+                }
+            }
+
+            if (bestMatch == null) continue;
+
+            long[] existing = BestiaryData.getKills(bestMatch[0], bestMatch[1]);
+            if (existing == null) continue;
+            long storedMax = existing[1];
+            long current   = isMax ? storedMax : tabCurrent;
+
+            String trackedKey = bestMatch[0] + " > " + bestMatch[1];
+            Long lastSeen = sessionCounts.get(trackedKey);
+
+            // Always keep BestiaryData up to date
             if (existing[0] != current) {
-                BestiaryData.saveMob(catMob[0], catMob[1], current, storedMax);
-                // Notify live tracker so Auto Track HUD can show this mob
-                String trackedKey = catMob[0] + " > " + catMob[1];
-                LiveMobTracker.touch(trackedKey);
+                BestiaryData.saveMob(bestMatch[0], bestMatch[1], current, storedMax);
                 updatedAny = true;
             }
+
+            // Only touch the HUD if we already saw this mob this session AND
+            // its count has since gone up — proving you just actively killed it.
+            // First appearance is just recorded silently to establish a baseline,
+            // preventing stale-data mismatches on area load from polluting the HUD.
+            if (lastSeen != null && current > lastSeen && current < storedMax) {
+                LiveMobTracker.touch(trackedKey);
+            }
+            sessionCounts.put(trackedKey, current);
         }
 
         if (updatedAny) {
@@ -89,27 +133,26 @@ public class TabListBestiaryReader {
         }
     }
 
-    /** Looks up which (category, canonicalMobName) pair matches the given mob name. */
-    private static String[] findCategoryAndMob(String mobName) {
-        // Search regular categories
+    /** Returns every (category, canonicalMobName) pair that matches the given mob name. */
+    private static List<String[]> findAllCategoryAndMob(String mobName) {
+        List<String[]> results = new java.util.ArrayList<>();
         for (Object catObj : BestiaryMobList.CATEGORIES.keySet()) {
             String cat = (String) catObj;
             if (cat.equals("Fishing")) continue;
             List mobs = (List) BestiaryMobList.CATEGORIES.get(cat);
             for (Object mobObj : mobs) {
                 String mob = (String) mobObj;
-                if (mob.equalsIgnoreCase(mobName)) return new String[]{cat, mob};
+                if (mob.equalsIgnoreCase(mobName)) results.add(new String[]{cat, mob});
             }
         }
-        // Search fishing subcategories
         for (Object subKeyObj : BestiaryMobList.FISHING_SUBCATEGORY_KEYS) {
             String subKey = (String) subKeyObj;
             List mobs = (List) BestiaryMobList.FISHING_SUBCATEGORIES.get(subKey);
             for (Object mobObj : mobs) {
                 String mob = (String) mobObj;
-                if (mob.equalsIgnoreCase(mobName)) return new String[]{subKey, mob};
+                if (mob.equalsIgnoreCase(mobName)) results.add(new String[]{subKey, mob});
             }
         }
-        return null;
+        return results;
     }
 }

@@ -11,31 +11,34 @@ import java.util.*;
 public class BestiaryViewScreen extends Screen {
 
     // ── Colours (matching BestiaryHud) ────────────────────────────────────────
-    private static final int C_BG         = 0xFF111111;
-    private static final int C_HEADER_BG  = 0xFF1A1A1A;
-    private static final int C_CARD_BG    = 0xFF1C1C1C;
-    private static final int C_CARD_BD    = 0xFF3A3A3A;
-    private static final int C_CARD_BD_LOCKED = 0xFF2A2A2A;
-    private static final int C_BAR_BG     = 0xFF2A2A2A;
-    private static final int C_BAR_FG     = 0xFF55AA00;
-    private static final int C_BAR_LOCKED = 0xFF333333;
-    private static final int C_ACCENT_LOW  = 0xFF884444; // < 40%
-    private static final int C_ACCENT_MID  = 0xFF887700; // 40–74%
-    private static final int C_ACCENT_HIGH = 0xFF3A7A20; // 75–99%
-    private static final int C_ORANGE     = 0xFFFFAA00;
-    private static final int C_WHITE      = 0xFFFFFFFF;
-    private static final int C_GRAY       = 0xFF888888;
-    private static final int C_GRAY_DIM   = 0xFF555555;
-    private static final int C_DIVIDER    = 0xFF333333;
+    private static final int C_BG              = 0xFF111111;
+    private static final int C_HEADER_BG       = 0xFF1A1A1A;
+    private static final int C_CARD_BG         = 0xFF1C1C1C;
+    private static final int C_CARD_BD         = 0xFF3A3A3A;
+    private static final int C_CARD_BD_LOCKED  = 0xFF2A2A2A;
+    private static final int C_BAR_BG          = 0xFF2A2A2A;
+    private static final int C_BAR_FG          = 0xFF55AA00;
+    private static final int C_BAR_LOCKED      = 0xFF333333;
+    private static final int C_ACCENT_LOW      = 0xFF884444;
+    private static final int C_ACCENT_MID      = 0xFF887700;
+    private static final int C_ACCENT_HIGH     = 0xFF3A7A20;
+    private static final int C_ORANGE          = 0xFFFFAA00;
+    private static final int C_WHITE           = 0xFFFFFFFF;
+    private static final int C_GRAY            = 0xFF888888;
+    private static final int C_GRAY_DIM        = 0xFF555555;
+    private static final int C_DIVIDER         = 0xFF333333;
+    private static final int C_CAT_PANEL       = 0xFF161616; // subtle bg behind each section
+    private static final int C_CAT_HEADER_BG   = 0xFF202020; // slightly raised header row
 
     // ── Layout ────────────────────────────────────────────────────────────────
-    private static final int HEADER_H = 30;
-    private static final int PADDING  = 10;
-    private static final int CARD_W   = 160;
-    private static final int CARD_H   = 38;
-    private static final int CARD_GAP = 4;
-    private static final int CAT_H    = 20;
-    private static final int CAT_PRE  = 12;
+    private static final int HEADER_H  = 30;
+    private static final int PADDING   = 10;
+    private static final int CARD_W    = 160;
+    private static final int CARD_H    = 38;
+    private static final int CARD_GAP  = 4;
+    private static final int CAT_H     = 22;  // category header bar height
+    private static final int CAT_PRE   = 20;  // gap before each category section
+    private static final int CAT_PAD   = 6;   // inner padding above/below cards inside panel
 
     // ── State ─────────────────────────────────────────────────────────────────
     private int scroll        = 0;
@@ -69,25 +72,32 @@ public class BestiaryViewScreen extends Screen {
             if (!s.equals("Fishing")) allCats.add(s); // skip placeholder
         }
         for (Object s : BestiaryMobList.FISHING_SUBCATEGORY_KEYS) allCats.add((String) s);
-        for (Object c : BestiaryData.getCategories()) allCats.add((String) c);
+        for (Object c : BestiaryData.getCategories()) {
+            String s = (String) c;
+            if (!s.equals("API")) allCats.add(s); // skip raw API dump category
+        }
 
         for (String cat : allCats) {
-            // Case-insensitive merge: lowercase key → display name.
-            // BestiaryMobList provides canonical names; BestiaryData keys override
-            // so that getKills() lookups always use the exact stored key.
+            // Normalized key → display name map.
+            // BestiaryData (real scanned names) is added first and always wins.
+            // BestiaryMobList entries are only added as "Not unlocked" placeholders
+            // when no normalized match already exists from BestiaryData.
             Map<String, String> mobKeyMap = new LinkedHashMap<>();
+
+            // 1. Real scanned names from BestiaryData — exact names Hypixel shows
+            for (Object m : BestiaryData.getMobsInCategory(cat)) {
+                String s = (String) m;
+                mobKeyMap.put(normalize(s), s);
+            }
+
+            // 2. BestiaryMobList entries — only if not already covered by a scanned name
             List known = (List) BestiaryMobList.CATEGORIES.get(cat);
             if (known == null) known = (List) BestiaryMobList.FISHING_SUBCATEGORIES.get(cat);
             if (known != null) {
                 for (Object m : known) {
                     String s = (String) m;
-                    mobKeyMap.put(s.toLowerCase(), s);
+                    mobKeyMap.putIfAbsent(normalize(s), s);
                 }
-            }
-            // Scanned data keys override — these are what getKills() needs exactly
-            for (Object m : BestiaryData.getMobsInCategory(cat)) {
-                String s = (String) m;
-                mobKeyMap.put(s.toLowerCase(), s);
             }
 
             if (!mobKeyMap.isEmpty()) {
@@ -110,7 +120,7 @@ public class BestiaryViewScreen extends Screen {
             if (mobs.isEmpty()) continue;
             h += CAT_PRE + CAT_H;
             int rows = (mobs.size() + cols - 1) / cols;
-            h += rows * (CARD_H + CARD_GAP) - CARD_GAP + PADDING;
+            h += CAT_PAD + rows * (CARD_H + CARD_GAP) - CARD_GAP + CAT_PAD;
         }
         return h + PADDING;
     }
@@ -148,18 +158,35 @@ public class BestiaryViewScreen extends Screen {
     }
 
     private void renderContent(GuiGraphics g, int listTop) {
-        int cols = columns();
-        int y = listTop - scroll + PADDING;
+        int cols  = columns();
+        int gridW = cols * (CARD_W + CARD_GAP) - CARD_GAP;
+        int y     = listTop - scroll + PADDING;
 
         for (String cat : categories) {
             List<String> mobs = catMobs.getOrDefault(cat, List.of());
             if (mobs.isEmpty()) continue;
 
+            int rows      = (mobs.size() + cols - 1) / cols;
+            int cardsH    = rows * (CARD_H + CARD_GAP) - CARD_GAP;
+            int sectionH  = CAT_H + CAT_PAD + cardsH + CAT_PAD;
+            int panelX    = PADDING - 4;
+            int panelW    = gridW + 8;
+
             y += CAT_PRE;
-            if (y + CAT_H > listTop && y < height) renderCategoryHeader(g, cat, y, cols);
+
+            // ── Section panel background ──────────────────────────────────────
+            if (y + sectionH > listTop && y < height) {
+                g.fill(panelX, y, panelX + panelW, y + sectionH, C_CAT_PANEL);
+            }
+
+            // ── Category header bar ───────────────────────────────────────────
+            if (y + CAT_H > listTop && y < height) {
+                renderCategoryHeader(g, cat, y, panelX, panelW, mobs.size());
+            }
             y += CAT_H;
 
-            int rows = (mobs.size() + cols - 1) / cols;
+            // ── Mob cards ─────────────────────────────────────────────────────
+            y += CAT_PAD;
             for (int i = 0; i < mobs.size(); i++) {
                 int col   = i % cols;
                 int row   = i / cols;
@@ -169,22 +196,32 @@ public class BestiaryViewScreen extends Screen {
                     renderCard(g, cat, mobs.get(i), cardX, cardY);
                 }
             }
-            y += rows * (CARD_H + CARD_GAP) - CARD_GAP + PADDING;
+            y += cardsH + CAT_PAD;
         }
     }
 
     // ── Category header ───────────────────────────────────────────────────────
 
-    private void renderCategoryHeader(GuiGraphics g, String cat, int y, int cols) {
-        String name  = displayName(cat);
-        int gridW    = cols * (CARD_W + CARD_GAP) - CARD_GAP;
-        int textW    = font.width(name);
-        int textX    = PADDING + (gridW - textW) / 2;
-        int lineY    = y + CAT_H / 2;
+    private void renderCategoryHeader(GuiGraphics g, String cat, int y,
+                                      int panelX, int panelW, int mobCount) {
+        // Header background
+        g.fill(panelX, y, panelX + panelW, y + CAT_H, C_CAT_HEADER_BG);
 
-        g.fill(PADDING,           lineY, textX - 5,       lineY + 1, C_DIVIDER);
-        g.fill(textX + textW + 5, lineY, PADDING + gridW, lineY + 1, C_DIVIDER);
-        g.drawString(font, name, textX, y + (CAT_H - 8) / 2, C_ORANGE);
+        // Orange left accent stripe
+        g.fill(panelX, y, panelX + 4, y + CAT_H, C_ORANGE);
+
+        // Bottom separator line
+        g.fill(panelX, y + CAT_H - 1, panelX + panelW, y + CAT_H, C_DIVIDER);
+
+        // Category name
+        String name = displayName(cat);
+        g.drawString(font, name, panelX + 10, y + (CAT_H - 8) / 2, C_ORANGE);
+
+        // Mob count right-aligned
+        String countStr = mobCount + " mobs";
+        g.drawString(font, countStr,
+                panelX + panelW - font.width(countStr) - 6,
+                y + (CAT_H - 8) / 2, C_GRAY);
     }
 
     // ── Mob card ──────────────────────────────────────────────────────────────
@@ -296,4 +333,18 @@ public class BestiaryViewScreen extends Screen {
     }
 
     private static int clamp(int v, int lo, int hi) { return Math.max(lo, Math.min(hi, v)); }
+
+    /** Roman numeral suffix pattern — same as BestiaryMenuReader uses when scanning. */
+    private static final java.util.regex.Pattern ROMAN_SUFFIX =
+            java.util.regex.Pattern.compile("\\s+(X{0,2}(?:IX|IV|V?I{0,3}))$");
+
+    /**
+     * Normalizes a mob name for fuzzy deduplication:
+     * strips Roman numeral tier suffixes, then lowercases and removes non-alphanumerics.
+     * "Barbarian Duke X" and "Barbarian Duke" both become "barbarianduke".
+     */
+    private static String normalize(String s) {
+        s = ROMAN_SUFFIX.matcher(s).replaceAll("").trim();
+        return s.toLowerCase().replaceAll("[^a-z0-9]", "");
+    }
 }

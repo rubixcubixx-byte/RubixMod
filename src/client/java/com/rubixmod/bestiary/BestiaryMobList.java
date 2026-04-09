@@ -140,7 +140,7 @@ public class BestiaryMobList {
                 "Fiery Scuttler", "Fire Eel", "Fireproof Witch", "Flaming Worm",
                 "Fried Chicken", "Lava Blaze", "Lava Flame", "Lava Leech",
                 "Lava Pigman", "Lord Jawbus", "Magma Slug", "Moogma",
-                "Phlegblast", "Pyroclastic Worm", "Ragnarok", "Taurus", "Thunder"
+                "Plhlegblast", "Pyroclastic Worm", "Ragnarok", "Taurus", "Thunder"
         ));
 
         FISHING_SUBCATEGORY_KEYS.add("Fishing > Fishing Festival");
