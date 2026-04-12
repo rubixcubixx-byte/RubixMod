@@ -33,7 +33,7 @@ public class RubixScreen extends Screen {
             .orElse("v1.0.0");
 
     private int selectedTab = 0;
-    private final String[] TAB_NAMES = { "Bestiary", "Dungeons", "API" };
+    private final String[] TAB_NAMES = { "Bestiary", "Dungeons", "Mining", "API" };
 
     private double lastMouseX, lastMouseY;
     private boolean wasPressed = false;
@@ -52,7 +52,9 @@ public class RubixScreen extends Screen {
             new Setting("Bestiary HUD Editor",    "Choose which mobs to track on the HUD",                   "Bestiary"),
             new Setting("Bestiary Alerts",        "Shows popups when you reach a new tier",                  "Bestiary"),
             new Setting("HUD Progress Display",   "Show kills toward max, or just toward the next tier",     "Bestiary"),
+            new Setting("Max HUD Mobs",           "How many mobs can appear on the HUD at once (1-15)",      "Bestiary"),
             new Setting("Bat Death Alert",        "Shows BAT KILLED title when you kill a bat in Catacombs", "Dungeons"),
+            new Setting("Littlefoot Tracker",     "Highlights Littlefoot mobs with an outline and tracer line", "Mining"),
             new Setting("Hypixel API Key",        "Configure your Hypixel API key",                          "API")
     );
 
@@ -88,7 +90,10 @@ public class RubixScreen extends Screen {
             addBestiaryButtons(cfg, HEADER_HEIGHT + 20);
         } else if (selectedTab == 1) {
             addDungeonsButtons(cfg, HEADER_HEIGHT + 20);
+        } else if (selectedTab == 2) {
+            addMiningButtons(cfg, HEADER_HEIGHT + 20);
         }
+        // API tab (index 3) has no interactive buttons
     }
 
     // ── Button helpers ────────────────────────────────────────────────────────
@@ -117,12 +122,35 @@ public class RubixScreen extends Screen {
                         cfg.hudPerTierMode ? perTier() : maxKills(),
                         btn -> { cfg.hudPerTierMode = !cfg.hudPerTierMode; RubixConfig.save(); rebuildWidgets(); })
                 .bounds(width - 90, contentY + 142, 70, 16).build());
+
+        // Max HUD Mobs: [-] N [+]
+        addRenderableWidget(Button.builder(
+                        Component.literal("-"),
+                        btn -> {
+                            cfg.hudMaxMobs = Math.max(1, cfg.hudMaxMobs - 1);
+                            RubixConfig.save(); rebuildWidgets();
+                        })
+                .bounds(width - 90, contentY + 172, 20, 16).build());
+        addRenderableWidget(Button.builder(
+                        Component.literal("+"),
+                        btn -> {
+                            cfg.hudMaxMobs = Math.min(15, cfg.hudMaxMobs + 1);
+                            RubixConfig.save(); rebuildWidgets();
+                        })
+                .bounds(width - 50, contentY + 172, 20, 16).build());
     }
 
     private void addDungeonsButtons(RubixConfig cfg, int contentY) {
         addRenderableWidget(Button.builder(
                         cfg.batDeathAlertEnabled ? on() : off(),
                         btn -> { cfg.batDeathAlertEnabled = !cfg.batDeathAlertEnabled; RubixConfig.save(); rebuildWidgets(); })
+                .bounds(width - 80, contentY + 22, 60, 16).build());
+    }
+
+    private void addMiningButtons(RubixConfig cfg, int contentY) {
+        addRenderableWidget(Button.builder(
+                        cfg.littlefootTrackerEnabled ? on() : off(),
+                        btn -> { cfg.littlefootTrackerEnabled = !cfg.littlefootTrackerEnabled; RubixConfig.save(); rebuildWidgets(); })
                 .bounds(width - 80, contentY + 22, 60, 16).build());
     }
 
@@ -156,9 +184,21 @@ public class RubixScreen extends Screen {
                             cfg.hudPerTierMode ? perTier() : maxKills(),
                             btn -> { cfg.hudPerTierMode = !cfg.hudPerTierMode; RubixConfig.save(); rebuildAndRefocus(); })
                     .bounds(width - 90, btnY, 70, 16).build());
+            case "Max HUD Mobs" -> {
+                addRenderableWidget(Button.builder(Component.literal("-"),
+                                btn -> { cfg.hudMaxMobs = Math.max(1, cfg.hudMaxMobs - 1); RubixConfig.save(); rebuildAndRefocus(); })
+                        .bounds(width - 90, btnY, 20, 16).build());
+                addRenderableWidget(Button.builder(Component.literal("+"),
+                                btn -> { cfg.hudMaxMobs = Math.min(15, cfg.hudMaxMobs + 1); RubixConfig.save(); rebuildAndRefocus(); })
+                        .bounds(width - 50, btnY, 20, 16).build());
+            }
             case "Bat Death Alert" -> addRenderableWidget(Button.builder(
                             cfg.batDeathAlertEnabled ? on() : off(),
                             btn -> { cfg.batDeathAlertEnabled = !cfg.batDeathAlertEnabled; RubixConfig.save(); rebuildAndRefocus(); })
+                    .bounds(width - 80, btnY, 60, 16).build());
+            case "Littlefoot Tracker" -> addRenderableWidget(Button.builder(
+                            cfg.littlefootTrackerEnabled ? on() : off(),
+                            btn -> { cfg.littlefootTrackerEnabled = !cfg.littlefootTrackerEnabled; RubixConfig.save(); rebuildAndRefocus(); })
                     .bounds(width - 80, btnY, 60, 16).build());
         }
     }
@@ -250,6 +290,10 @@ public class RubixScreen extends Screen {
             g.drawString(font, "Shows popups when you reach a new tier",           contentX, contentY + 123, COLOR_GRAY);
             g.drawString(font, "HUD Progress Display", contentX, contentY + 142, COLOR_WHITE);
             g.drawString(font, "Show kills toward max, or just toward the next tier", contentX, contentY + 153, COLOR_GRAY);
+            g.drawString(font, "Max HUD Mobs", contentX, contentY + 172, COLOR_WHITE);
+            g.drawString(font, "How many mobs show on the HUD at once (1-15)", contentX, contentY + 183, COLOR_GRAY);
+            int mobLabelX = width - 90 + 22;
+            g.drawString(font, String.valueOf(cfg.hudMaxMobs), mobLabelX, contentY + 175, COLOR_WHITE);
 
         } else if (selectedTab == 1) {
             g.drawString(font, "Dungeons", contentX, contentY, COLOR_WHITE);
@@ -258,6 +302,12 @@ public class RubixScreen extends Screen {
             g.drawString(font, "Shows BAT KILLED title when you kill a bat in Catacombs", contentX, contentY + 33, COLOR_GRAY);
 
         } else if (selectedTab == 2) {
+            g.drawString(font, "Mining", contentX, contentY, COLOR_WHITE);
+            g.fill(contentX, contentY + 12, width - 20, contentY + 13, COLOR_DIVIDER);
+            g.drawString(font, "Littlefoot Tracker",  contentX, contentY + 22, COLOR_WHITE);
+            g.drawString(font, "Draws an outline and tracer line to Littlefoot mobs in mineshafts", contentX, contentY + 33, COLOR_GRAY);
+
+        } else if (selectedTab == 3) {
             g.drawString(font, "API", contentX, contentY, COLOR_WHITE);
             g.fill(contentX, contentY + 12, width - 20, contentY + 13, COLOR_DIVIDER);
             if (cfg.hasApiKey()) {

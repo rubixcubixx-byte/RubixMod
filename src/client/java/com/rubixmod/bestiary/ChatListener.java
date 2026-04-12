@@ -1,6 +1,5 @@
 package com.rubixmod.bestiary;
 
-import com.rubixmod.RubixMod;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 
 import java.util.regex.Matcher;
@@ -37,7 +36,6 @@ public class ChatListener {
                 int newTier = fromRoman(matcher.group(3).trim());
 
                 if (newTier > 0 && newTier > oldTier) {
-                    RubixMod.LOGGER.info("RubixMod: Tier-up! {} {} -> {}", mobName, oldTier, newTier);
                     BestiaryTierUpHandler.onTierUp(mobName, newTier, newTier - oldTier);
                 }
                 return;
@@ -50,7 +48,6 @@ public class ChatListener {
                 int newTier = fromRoman(firstMatcher.group(2).trim());
 
                 if (newTier > 0) {
-                    RubixMod.LOGGER.info("RubixMod: First tier! {} -> {}", mobName, newTier);
                     BestiaryTierUpHandler.onTierUp(mobName, newTier, 1);
                 }
             }

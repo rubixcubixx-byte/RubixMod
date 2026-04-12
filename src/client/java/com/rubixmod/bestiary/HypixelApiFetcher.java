@@ -3,7 +3,6 @@ package com.rubixmod.bestiary;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import com.rubixmod.RubixMod;
 import com.rubixmod.config.RubixConfig;
 import net.minecraft.client.Minecraft;
 
@@ -58,39 +57,22 @@ public class HypixelApiFetcher {
 
     private static void fetchBestiary() {
         try {
-            if (!RubixConfig.get().hasApiKey()) {
-                RubixMod.LOGGER.warn("RubixMod: No API key set in config, skipping fetch");
-                return;
-            }
+            if (!RubixConfig.get().hasApiKey()) return;
 
             Minecraft client = Minecraft.getInstance();
-            if (client.player == null) {
-                RubixMod.LOGGER.warn("RubixMod: Player is null, skipping fetch");
-                return;
-            }
+            if (client.player == null) return;
 
             String uuid = client.player.getGameProfile().id().toString().replace("-", "");
             String apiKey = RubixConfig.get().hypixelApiKey;
 
-            RubixMod.LOGGER.info("RubixMod: Fetching bestiary from Hypixel API for UUID: {}", uuid);
-
             String profilesUrl = "https://api.hypixel.net/v2/skyblock/profiles?uuid=" + uuid;
             JsonObject profilesResponse = fetchJson(profilesUrl, apiKey);
 
-            if (profilesResponse == null) {
-                RubixMod.LOGGER.warn("RubixMod: API response was null");
-                return;
-            }
+            if (profilesResponse == null) return;
 
-            if (!profilesResponse.has("success") || !profilesResponse.get("success").getAsBoolean()) {
-                RubixMod.LOGGER.warn("RubixMod: API returned success=false: {}", profilesResponse);
-                return;
-            }
+            if (!profilesResponse.has("success") || !profilesResponse.get("success").getAsBoolean()) return;
 
-            if (!profilesResponse.has("profiles") || profilesResponse.get("profiles").isJsonNull()) {
-                RubixMod.LOGGER.warn("RubixMod: No profiles in response");
-                return;
-            }
+            if (!profilesResponse.has("profiles") || profilesResponse.get("profiles").isJsonNull()) return;
 
             // Find selected profile
             JsonObject selectedProfile = null;
@@ -102,36 +84,19 @@ public class HypixelApiFetcher {
                 }
             }
 
-            if (selectedProfile == null) {
-                RubixMod.LOGGER.warn("RubixMod: No selected profile found");
-                return;
-            }
-
-            if (!selectedProfile.has("members")) {
-                RubixMod.LOGGER.warn("RubixMod: No members in profile");
-                return;
-            }
+            if (selectedProfile == null) return;
+            if (!selectedProfile.has("members")) return;
 
             JsonObject members = selectedProfile.getAsJsonObject("members");
-            if (!members.has(uuid)) {
-                RubixMod.LOGGER.warn("RubixMod: UUID {} not found in members", uuid);
-                return;
-            }
+            if (!members.has(uuid)) return;
 
             JsonObject memberData = members.getAsJsonObject(uuid);
-            if (!memberData.has("bestiary")) {
-                RubixMod.LOGGER.warn("RubixMod: No bestiary field in member data");
-                return;
-            }
+            if (!memberData.has("bestiary")) return;
 
             JsonObject bestiary = memberData.getAsJsonObject("bestiary");
-            if (!bestiary.has("kills")) {
-                RubixMod.LOGGER.warn("RubixMod: No kills field in bestiary");
-                return;
-            }
+            if (!bestiary.has("kills")) return;
 
             JsonObject kills = bestiary.getAsJsonObject("kills");
-            int count = 0;
 
             Set entries = kills.entrySet();
             for (Object obj : entries) {
@@ -142,15 +107,11 @@ public class HypixelApiFetcher {
                 // API data goes into an "API" category as a reference
                 // The /bestiary GUI scan is the authoritative source for category-aware data
                 BestiaryData.saveMob("API", mobName, killCount, 0);
-                count++;
             }
 
             BestiaryData.save();
-            RubixMod.LOGGER.info("RubixMod: Bestiary refreshed from Hypixel API ({} mobs)", count);
 
-        } catch (Exception e) {
-            RubixMod.LOGGER.error("RubixMod: Error fetching bestiary: {}", e.getMessage());
-        }
+        } catch (Exception ignored) {}
     }
 
     private static JsonObject fetchJson(String urlStr, String apiKey) {
@@ -164,19 +125,13 @@ public class HypixelApiFetcher {
             conn.setRequestProperty("API-Key", apiKey);
 
             int code = conn.getResponseCode();
-            RubixMod.LOGGER.info("RubixMod: HTTP response code: {}", code);
-
-            if (code != 200) {
-                RubixMod.LOGGER.warn("RubixMod: API returned HTTP {}", code);
-                return null;
-            }
+            if (code != 200) return null;
 
             InputStreamReader reader = new InputStreamReader(conn.getInputStream());
             JsonObject result = JsonParser.parseReader(reader).getAsJsonObject();
             reader.close();
             return result;
-        } catch (Exception e) {
-            RubixMod.LOGGER.error("RubixMod: HTTP error: {}", e.getMessage());
+        } catch (Exception ignored) {
             return null;
         }
     }

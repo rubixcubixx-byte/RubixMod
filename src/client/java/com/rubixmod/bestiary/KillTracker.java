@@ -46,7 +46,6 @@ public class KillTracker {
                 String area = readAreaFromTabList(client);
                 if (area != null && !area.equals(currentLocation)) {
                     currentLocation = area;
-                    RubixMod.LOGGER.info("RubixMod: Location updated to '{}'", currentLocation);
                 }
             }
 
@@ -132,8 +131,6 @@ public class KillTracker {
             BestiaryData.saveMob(category, matchedMob, newKills, kills[1]);
             BestiaryData.save();
 
-            RubixMod.LOGGER.info("RubixMod: Kill tracked! {} > {} ({}/{})",
-                    category, matchedMob, newKills, kills[1]);
             return;
         }
     }

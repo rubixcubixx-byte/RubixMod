@@ -1,6 +1,5 @@
 package com.rubixmod.bestiary;
 
-import com.rubixmod.RubixMod;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.component.DataComponents;
@@ -46,8 +45,6 @@ public class BestiaryMenuReader {
 
             String category = extractCategory(cleanTitle);
             if (category == null) return;
-
-            RubixMod.LOGGER.info("RubixMod: Reading bestiary: '{}'", category);
 
             final String finalCategory = category;
             final int[] ticksWaited  = {0};
@@ -236,14 +233,6 @@ public class BestiaryMenuReader {
                 hasNextPage = true;
                 break;
             }
-        }
-
-        RubixMod.LOGGER.info("RubixMod: Saved {} mob(s) from '{}'{}: {}",
-                savedNames.size(), category,
-                hasNextPage ? " (more pages)" : "",
-                savedNames);
-        if (!skippedNames.isEmpty()) {
-            RubixMod.LOGGER.info("RubixMod: Skipped {} item(s): {}", skippedNames.size(), skippedNames);
         }
 
         return savedAny;

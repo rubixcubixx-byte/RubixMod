@@ -1,10 +1,10 @@
 package com.rubixmod.dungeon;
 
-import com.rubixmod.RubixMod;
 import com.rubixmod.config.RubixConfig;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.entity.Entity;
@@ -25,8 +25,8 @@ import java.util.Set;
 
 public class BatDeathDetector {
 
-    private static final Map trackedBats = new HashMap<>();
-    private static final Set alertedBats = new HashSet<>();
+    private static final Map<Integer, Integer> trackedBats = new HashMap<>();
+    private static final Set<Integer> alertedBats = new HashSet<>();
     private static final int MIN_TICKS_BEFORE_ALERT = 5;
 
     public static void register() {
@@ -38,6 +38,7 @@ public class BatDeathDetector {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (!RubixConfig.get().batDeathAlertEnabled) return;
             if (client.player == null || client.level == null) return;
+
             if (!isInCatacombs()) {
                 if (!trackedBats.isEmpty()) {
                     trackedBats.clear();
@@ -46,49 +47,45 @@ public class BatDeathDetector {
                 return;
             }
 
-            List currentBatIds = new ArrayList<>();
+            List<Integer> currentBatIds = new ArrayList<>();
 
             for (Entity entity : client.level.entitiesForRendering()) {
                 if (!(entity instanceof AmbientCreature)) continue;
                 int id = entity.getId();
                 currentBatIds.add(id);
 
-                // Trigger instantly when bat health hits 0
-                if (entity instanceof LivingEntity) {
-                    LivingEntity living = (LivingEntity) entity;
-                    int ticksSeen = trackedBats.containsKey(id) ? (Integer) trackedBats.get(id) : 0;
-                    if (living.getHealth() <= 0 && !alertedBats.contains(id) && ticksSeen >= MIN_TICKS_BEFORE_ALERT) {
+                if (entity instanceof LivingEntity living) {
+                    int ticksSeen = trackedBats.getOrDefault(id, 0);
+                    if (living.getHealth() <= 0 && !alertedBats.contains(id)
+                            && ticksSeen >= MIN_TICKS_BEFORE_ALERT) {
                         alertedBats.add(id);
-                        RubixMod.LOGGER.info("RubixMod: Bat id={} health<=0 after {} ticks, triggering alert!", id, ticksSeen);
                         onBatKilled(client);
                     }
                 }
             }
 
-            // Clean up bats that have fully unloaded (no alert, just cleanup)
-            List toRemove = new ArrayList<>();
-            for (Object keyObj : new ArrayList<>(trackedBats.keySet())) {
-                int batId = (Integer) keyObj;
-                if (!currentBatIds.contains(batId)) {
-                    toRemove.add(batId);
-                }
+            // Alert when a tracked bat disappears from the entity list.
+            // Hypixel removes entities server-side on death without setting health to 0.
+            List<Integer> toRemove = new ArrayList<>();
+            for (int batId : trackedBats.keySet()) {
+                if (!currentBatIds.contains(batId)) toRemove.add(batId);
             }
-            for (Object idObj : toRemove) {
-                trackedBats.remove(idObj);
-                alertedBats.remove(idObj);
+            for (int batId : toRemove) {
+                int ticksSeen = trackedBats.getOrDefault(batId, 0);
+                if (!alertedBats.contains(batId) && ticksSeen >= MIN_TICKS_BEFORE_ALERT) {
+                    onBatKilled(client);
+                }
+                trackedBats.remove(batId);
+                alertedBats.remove(batId);
             }
 
-            // Add/increment tracked bats
-            for (Object idObj : currentBatIds) {
-                int batId = (Integer) idObj;
-                int prev = trackedBats.containsKey(batId) ? (Integer) trackedBats.get(batId) : 0;
-                trackedBats.put(batId, prev + 1);
+            for (int batId : currentBatIds) {
+                trackedBats.merge(batId, 1, Integer::sum);
             }
         });
     }
 
     private static void onBatKilled(Minecraft client) {
-        RubixMod.LOGGER.info("RubixMod: Bat killed in Catacombs!");
         client.execute(() -> {
             if (client.player != null) {
                 client.player.playSound(SoundEvents.NOTE_BLOCK_CHIME.value(), 1.0f, 2.0f);
@@ -103,31 +100,51 @@ public class BatDeathDetector {
 
     private static boolean isInCatacombs() {
         try {
-            Minecraft client = Minecraft.getInstance();
-            if (client.level == null) return false;
-            Scoreboard scoreboard = client.level.getScoreboard();
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player == null) return false;
 
-            for (PlayerTeam team : scoreboard.getPlayerTeams()) {
-                String entry = team.getPlayerPrefix().getString()
-                        + team.getPlayerSuffix().getString();
-                if (entry.contains("Catacombs")) return true;
+            if (mc.getConnection() != null) {
+                for (PlayerInfo info : mc.getConnection().getListedOnlinePlayers()) {
+                    if (info.getTabListDisplayName() == null) continue;
+                    String text = info.getTabListDisplayName().getString()
+                            .replaceAll("\u00a7.", "").trim();
+                    if (text.contains("Catacombs")) return true;
+                }
             }
 
-            for (Objective obj : scoreboard.getObjectives()) {
-                String name = obj.getDisplayName().getString();
-                if (name.contains("Catacombs") || name.contains("SKYBLOCK")) return true;
+            if (mc.level == null) return false;
+            Scoreboard sb = mc.level.getScoreboard();
+
+            for (PlayerTeam team : sb.getPlayerTeams()) {
+                String txt = (team.getPlayerPrefix().getString()
+                        + team.getPlayerSuffix().getString())
+                        .replaceAll("\u00a7.", "").trim();
+                if (txt.contains("Catacombs")) return true;
             }
 
-            Objective sidebar = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR);
+            for (Objective obj : sb.getObjectives()) {
+                if (obj.getDisplayName().getString()
+                        .replaceAll("\u00a7.", "").trim().contains("Catacombs")) return true;
+            }
+
+            Objective sidebar = sb.getDisplayObjective(DisplaySlot.SIDEBAR);
             if (sidebar != null) {
-                for (PlayerScoreEntry entry : scoreboard.listPlayerScores(sidebar)) {
-                    if (entry.owner().contains("Catacombs")) return true;
+                if (sidebar.getDisplayName().getString()
+                        .replaceAll("\u00a7.", "").contains("Catacombs")) return true;
+
+                for (PlayerScoreEntry e : sb.listPlayerScores(sidebar)) {
+                    String raw = e.owner().replaceAll("\u00a7.", "").trim();
+                    if (raw.contains("Catacombs")) return true;
+                    if (e.display() != null) {
+                        String disp = e.display().getString()
+                                .replaceAll("\u00a7.", "").trim();
+                        if (disp.contains("Catacombs")) return true;
+                    }
                 }
             }
 
             return false;
-        } catch (Exception e) {
-            RubixMod.LOGGER.info("RubixMod: isInCatacombs error: {}", e.getMessage());
+        } catch (Exception ignored) {
             return false;
         }
     }

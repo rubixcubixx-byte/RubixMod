@@ -3,6 +3,7 @@ package com.rubixmod.hud;
 import com.rubixmod.bestiary.BestiaryData;
 import com.rubixmod.bestiary.BestiaryTierUpHandler;
 import com.rubixmod.bestiary.LiveMobTracker;
+import com.rubixmod.bestiary.TabListBestiaryReader;
 import com.rubixmod.config.RubixConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -39,8 +40,7 @@ public class BestiaryHud {
 
     /**
      * Standard Hypixel Skyblock bestiary tier thresholds (cumulative kills to START each tier).
-     * Index 0 = start of Tier 1 (0 kills), Index 1 = start of Tier 2 (25 kills), etc.
-     * Most mobs follow this pattern; a few bosses/special mobs may differ slightly.
+     * Used as a fallback when tab list tier data is not yet available.
      */
     private static final long[] TIER_STARTS = {0, 10, 100, 250, 500, 1000, 2500, 5000, 10000};
 
@@ -68,9 +68,6 @@ public class BestiaryHud {
     /**
      * Renders the bestiary HUD box.
      * Also called directly by HudEditScreen with preview=true.
-     *
-     * @param preview  When true: show a placeholder card if no mobs are tracked,
-     *                 so the HUD box stays visible and draggable in the editor.
      */
     public static void renderBestiaryInfo(GuiGraphics g, Font font, boolean preview) {
         RubixConfig cfg = RubixConfig.get();
@@ -78,10 +75,15 @@ public class BestiaryHud {
 
         if (tracked.isEmpty()) {
             if (!preview) return;
-            // In the editor, fall back to the pinned list; if that's also empty use a placeholder
             tracked = cfg.trackedMobs.isEmpty()
                     ? java.util.Arrays.asList(PREVIEW_KEY)
                     : cfg.trackedMobs;
+        }
+
+        // Apply max mobs limit (1–15)
+        int maxMobs = Math.max(1, Math.min(15, cfg.hudMaxMobs));
+        if (tracked.size() > maxMobs) {
+            tracked = tracked.subList(0, maxMobs);
         }
 
         int x      = (int) cfg.bestiaryHudX;
@@ -135,32 +137,40 @@ public class BestiaryHud {
             g.fill(cardX,             cardY,          cardX + 1,         cardY + CARD_H,      COLOR_CARD_BD);
             g.fill(cardX + cardW - 1, cardY,          cardX + cardW,     cardY + CARD_H,      COLOR_CARD_BD);
 
-            // Mob name line — in per-tier mode, show "T4 → T5" right-aligned on the same row
+            boolean isMaxed = max > 0 && current >= max;
+
+            // Mob name line — in per-tier mode (non-maxed), show tier label right-aligned
             int nameLineW = cardW - 8;
             String nameDisplay = displayName;
 
-            if (cfg.hudPerTierMode && current >= 0 && !(max > 0 && current >= max)) {
-                // Calculate tier for the name line label
-                int tn = 1;
-                for (int t = TIER_STARTS.length - 1; t >= 1; t--) {
-                    if (current >= TIER_STARTS[t]) { tn = t + 1; break; }
+            if (cfg.hudPerTierMode && current >= 0 && !isMaxed) {
+                // Resolve tier number from tab list data, falling back to TIER_STARTS
+                TabListBestiaryReader.TierInfo tierInfo = TabListBestiaryReader.getTierInfo(key);
+                int displayTier;
+                if (tierInfo != null) {
+                    displayTier = tierInfo.tierNum;
+                } else {
+                    displayTier = 1;
+                    for (int t = TIER_STARTS.length - 1; t >= 1; t--) {
+                        if (current >= TIER_STARTS[t]) { displayTier = t + 1; break; }
+                    }
                 }
-                String tierLabel = toRoman(tn) + " \u2192 " + toRoman(tn + 1);
+                String tierLabel = toRoman(displayTier) + " \u2192 " + toRoman(displayTier + 1);
                 int tierLabelW = font.width(tierLabel);
-                int nameMaxW   = nameLineW - tierLabelW - 6; // 6px gap between name and label
+                int nameMaxW   = nameLineW - tierLabelW - 6;
 
                 while (font.width(nameDisplay) > nameMaxW && nameDisplay.length() > 3) {
                     nameDisplay = nameDisplay.substring(0, nameDisplay.length() - 1);
                 }
                 g.drawString(font, nameDisplay, cardX + 4, cardY + 3, COLOR_WHITE, false);
-                // Place tier label immediately after the mob name with a 3px gap
                 g.drawString(font, tierLabel,
                         cardX + 4 + font.width(nameDisplay) + 3, cardY + 3, COLOR_WHITE, false);
             } else {
                 while (font.width(nameDisplay) > nameLineW && nameDisplay.length() > 3) {
                     nameDisplay = nameDisplay.substring(0, nameDisplay.length() - 1);
                 }
-                g.drawString(font, nameDisplay, cardX + 4, cardY + 3, COLOR_WHITE, false);
+                g.drawString(font, nameDisplay, cardX + 4, cardY + 3,
+                        isMaxed ? COLOR_ORANGE : COLOR_WHITE, false);
             }
 
             // Progress bar — sits at the bottom of the card
@@ -177,39 +187,60 @@ public class BestiaryHud {
                         barX + barW / 2 - font.width(msg) / 2,
                         barY + 2, COLOR_GRAY, false);
 
-            } else if (max > 0 && current >= max) {
-                // Completed — full green bar, "DONE" inside
-                g.fill(barX, barY, barX + barW, barY + barH, COLOR_BAR_FG);
-                String done = "DONE";
+            } else if (isMaxed) {
+                // Completed — gold bar + "MAX"
+                g.fill(barX, barY, barX + barW, barY + barH, COLOR_ORANGE);
+                String done = "MAX";
                 g.drawString(font, done,
                         barX + barW / 2 - font.width(done) / 2,
                         barY + 2, COLOR_WHITE, false);
 
             } else if (cfg.hudPerTierMode) {
-                // Per-tier mode: show progress within the current tier
-                int tierNum = 1;
-                long tierStart = 0;
-                long tierEnd = max > 0 ? max : TIER_STARTS[TIER_STARTS.length - 1];
-                for (int t = TIER_STARTS.length - 1; t >= 1; t--) {
-                    if (current >= TIER_STARTS[t]) {
-                        tierNum   = t + 1;
-                        tierStart = TIER_STARTS[t];
-                        tierEnd   = (t + 1 < TIER_STARTS.length) ? TIER_STARTS[t + 1] : (max > 0 ? max : tierStart + 100);
-                        break;
-                    }
-                }
-                long tierCurrent = current - tierStart;
-                long tierMax     = tierEnd - tierStart;
+                // Per-tier mode: try to use live tab list data first
+                TabListBestiaryReader.TierInfo tierInfo = TabListBestiaryReader.getTierInfo(key);
 
-                g.fill(barX, barY, barX + barW, barY + barH, COLOR_BAR_BG);
-                if (tierMax > 0) {
-                    int filled = (int) Math.min(barW, (tierCurrent * barW) / tierMax);
-                    if (filled > 0) g.fill(barX, barY, barX + filled, barY + barH, COLOR_BAR_FG);
+                if (tierInfo != null) {
+                    long tierStart   = tierInfo.tabTierStart;
+                    long tierMax     = tierInfo.tabTierMax;
+                    long tierCurrent = tierInfo.tabCurrent;
+                    long tierRange   = tierMax - tierStart;
+
+                    g.fill(barX, barY, barX + barW, barY + barH, COLOR_BAR_BG);
+                    if (tierRange > 0) {
+                        long within = Math.max(0, tierCurrent - tierStart);
+                        int filled = (int) Math.min(barW, (within * barW) / tierRange);
+                        if (filled > 0) g.fill(barX, barY, barX + filled, barY + barH, COLOR_BAR_FG);
+                    }
+                    String tierText = tierCurrent + "/" + tierMax;
+                    g.drawString(font, tierText,
+                            barX + barW / 2 - font.width(tierText) / 2,
+                            barY + 2, COLOR_WHITE, false);
+                } else {
+                    // Fall back to TIER_STARTS calculation
+                    long tierStart = 0;
+                    long tierEnd   = max > 0 ? max : TIER_STARTS[TIER_STARTS.length - 1];
+                    for (int t = TIER_STARTS.length - 1; t >= 1; t--) {
+                        if (current >= TIER_STARTS[t]) {
+                            tierStart = TIER_STARTS[t];
+                            tierEnd   = (t + 1 < TIER_STARTS.length)
+                                    ? TIER_STARTS[t + 1]
+                                    : (max > 0 ? max : tierStart + 100);
+                            break;
+                        }
+                    }
+                    long tierCurrent = current - tierStart;
+                    long tierMax     = tierEnd - tierStart;
+
+                    g.fill(barX, barY, barX + barW, barY + barH, COLOR_BAR_BG);
+                    if (tierMax > 0) {
+                        int filled = (int) Math.min(barW, (tierCurrent * barW) / tierMax);
+                        if (filled > 0) g.fill(barX, barY, barX + filled, barY + barH, COLOR_BAR_FG);
+                    }
+                    String tierText = tierCurrent + "/" + tierMax;
+                    g.drawString(font, tierText,
+                            barX + barW / 2 - font.width(tierText) / 2,
+                            barY + 2, COLOR_WHITE, false);
                 }
-                String tierText = tierCurrent + "/" + tierMax;
-                g.drawString(font, tierText,
-                        barX + barW / 2 - font.width(tierText) / 2,
-                        barY + 2, COLOR_WHITE, false);
 
             } else {
                 // Max Kills mode (default): show overall progress
@@ -237,11 +268,8 @@ public class BestiaryHud {
     }
 
     /**
-     * Renders tier-up popup alerts.
+     * Renders tier-up popup alerts, including special rainbow MAX animations.
      * Also called directly by HudEditScreen with preview=true.
-     *
-     * @param preview  When true: use raw popup list (ignore expiry) and force full alpha,
-     *                 so the preview stays permanently visible in the editor.
      */
     public static void renderTierUpPopups(GuiGraphics g, Font font, int screenW, int screenH, boolean preview) {
         RubixConfig cfg = RubixConfig.get();
@@ -250,54 +278,76 @@ public class BestiaryHud {
                 : BestiaryTierUpHandler.getActivePopups();
         if (popups.isEmpty()) return;
 
-        // In preview mode always show at full opacity; otherwise fade based on newest entry age
+        // In preview mode always show at full opacity; otherwise fade based on newest non-MAX entry age
         int a;
         if (preview) {
             a = 0xFF;
         } else {
+            // Find the newest entry to base fade on
             BestiaryTierUpHandler.TierUpEntry newest =
                     (BestiaryTierUpHandler.TierUpEntry) popups.get(popups.size() - 1);
-            long age = System.currentTimeMillis() - newest.timestamp;
-            float alpha = age < 4500 ? 1.0f : Math.max(0f, 1.0f - (age - 4500) / 500f);
+            long duration = newest.isMaxEvent ? 8000L : 5000L;
+            long age  = System.currentTimeMillis() - newest.timestamp;
+            float fadeStart = duration - 500L;
+            float alpha = age < fadeStart ? 1.0f : Math.max(0f, 1.0f - (age - fadeStart) / 500f);
             a = (int) (alpha * 0xFF) & 0xFF;
             if (a <= 0) return;
         }
 
-        // Accumulate total XP — 1 per tier gained
+        // Count XP only from normal tier-up entries (MAX events don't grant tier XP)
         int totalXP = 0;
         for (int i = 0; i < popups.size(); i++) {
-            totalXP += ((BestiaryTierUpHandler.TierUpEntry) popups.get(i)).tiersGained;
+            BestiaryTierUpHandler.TierUpEntry e = (BestiaryTierUpHandler.TierUpEntry) popups.get(i);
+            if (!e.isMaxEvent) totalXP += e.tiersGained;
         }
 
-        int lineH   = 11; // font height (8px) + gap
+        int lineH   = 11;
         int centerX = (int) cfg.alertsX;
         int centerY = (int) cfg.alertsY;
         float s     = cfg.alertsScale;
-        // Total height = XP line + one line per popup; center around alertsY
-        int totalH  = (1 + popups.size()) * lineH;
-        int startY  = centerY - totalH / 2;
+        // Total lines: conditionally 1 for XP + 1 per popup entry
+        int totalLines = (totalXP > 0 ? 1 : 0) + popups.size();
+        int totalH     = totalLines * lineH;
+        int startY     = centerY - totalH / 2;
 
-        // Scale around the anchor point
         g.pose().pushMatrix();
         g.pose().translate(centerX, centerY);
         g.pose().scale(s, s);
         g.pose().translate(-centerX, -centerY);
 
-        // "+X Skyblock XP" in cyan on top
-        String xpLine  = "+" + totalXP + " Skyblock XP";
-        int    cyanCol = (a << 24) | 0x55FFFF;
-        g.drawString(font, xpLine, centerX - font.width(xpLine) / 2, startY, cyanCol, true);
+        int lineOffset = 0;
 
-        // One green line per tier-up below
-        int greenCol = (a << 24) | 0x55FF55;
+        // XP line (only when there are normal tier-up entries)
+        if (totalXP > 0) {
+            String xpLine  = "+" + totalXP + " Skyblock XP";
+            int    cyanCol = (a << 24) | 0x55FFFF;
+            g.drawString(font, xpLine, centerX - font.width(xpLine) / 2, startY, cyanCol, true);
+            lineOffset = 1;
+        }
+
+        // Rainbow color palette for MAX events
+        int[] rainbowPalette = {0xFF5555, 0xFFAA00, 0xFFFF55, 0x55FF55, 0x55FFFF, 0x5555FF, 0xFF55FF};
+
         for (int i = 0; i < popups.size(); i++) {
             BestiaryTierUpHandler.TierUpEntry entry =
                     (BestiaryTierUpHandler.TierUpEntry) popups.get(i);
-            String line = entry.mobName + " reached Tier " + entry.newTier + "!";
-            g.drawString(font, line,
-                    centerX - font.width(line) / 2,
-                    startY + (i + 1) * lineH,
-                    greenCol, true);
+            int lineY = startY + (i + lineOffset) * lineH;
+
+            if (entry.isMaxEvent) {
+                // Cycling rainbow color
+                int rainbowIdx = (int) ((System.currentTimeMillis() / 100) % rainbowPalette.length);
+                int rainbowCol = (a << 24) | rainbowPalette[rainbowIdx];
+                String maxLine = "\u2605 " + entry.mobName + " MAXED \u2605";
+                g.drawString(font, maxLine,
+                        centerX - font.width(maxLine) / 2,
+                        lineY, rainbowCol, true);
+            } else {
+                int greenCol = (a << 24) | 0x55FF55;
+                String line = entry.mobName + " reached Tier " + entry.newTier + "!";
+                g.drawString(font, line,
+                        centerX - font.width(line) / 2,
+                        lineY, greenCol, true);
+            }
         }
 
         g.pose().popMatrix();

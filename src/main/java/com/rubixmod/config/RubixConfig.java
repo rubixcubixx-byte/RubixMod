@@ -21,6 +21,7 @@ public class RubixConfig {
     public boolean dungeonScoreEnabled = false;
     public boolean blazeSolverEnabled = false;
     public boolean batDeathAlertEnabled = true;
+    public boolean littlefootTrackerEnabled = true;
     public String hypixelApiKey = "";
 
     // Bestiary HUD position and scale
@@ -32,6 +33,22 @@ public class RubixConfig {
     public float alertsX = -1;
     public float alertsY = -1;
     public float alertsScale = 1.0f;
+
+    // Bestiary HUD max mobs shown at once (1–15)
+    public int hudMaxMobs = 5;
+
+    // Bestiary UI: hide mobs that are fully maxed
+    public boolean bestiaryHideMax = false;
+
+    // Bestiary UI: set of category keys that are currently collapsed
+    public java.util.HashSet<String> collapsedCategories = new java.util.HashSet<>();
+
+    // Bestiary UI: set of category keys hidden by the icon filter bar (empty = all visible)
+    public java.util.HashSet<String> hiddenCategories = new java.util.HashSet<>();
+
+    // Persists tier bar start positions across sessions.
+    // key = trackedKey ("Category > Mob"), value = "tierNum,tierStart"
+    public Map<String, String> tierStartCache = new LinkedHashMap<>();
 
     // Tracked mobs for the Bestiary HUD (ordered list of mob names)
     public List trackedMobs = new ArrayList<>();
@@ -62,6 +79,10 @@ public class RubixConfig {
                     instance = GSON.fromJson(reader, RubixConfig.class);
                     if (instance.trackedMobs == null) instance.trackedMobs = new ArrayList<>();
                     if (instance.bestiaryKillData == null) instance.bestiaryKillData = new LinkedHashMap<>();
+                    if (instance.collapsedCategories == null) instance.collapsedCategories = new java.util.HashSet<>();
+                    if (instance.hiddenCategories == null)   instance.hiddenCategories   = new java.util.HashSet<>();
+                    if (instance.tierStartCache == null)     instance.tierStartCache     = new LinkedHashMap<>();
+                    if (instance.hudMaxMobs <= 0) instance.hudMaxMobs = 5;
                 }
             } else {
                 instance = new RubixConfig();

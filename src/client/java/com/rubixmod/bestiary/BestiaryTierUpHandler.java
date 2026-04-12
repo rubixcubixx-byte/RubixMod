@@ -2,7 +2,6 @@ package com.rubixmod.bestiary;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
 
 import java.util.ArrayList;
 
@@ -13,16 +12,23 @@ public class BestiaryTierUpHandler {
         public final int newTier;
         public final int tiersGained;
         public final long timestamp;
+        public final boolean isMaxEvent;
 
         public TierUpEntry(String mobName, int newTier, int tiersGained) {
+            this(mobName, newTier, tiersGained, false);
+        }
+
+        public TierUpEntry(String mobName, int newTier, int tiersGained, boolean isMaxEvent) {
             this.mobName = mobName;
             this.newTier = newTier;
             this.tiersGained = tiersGained;
             this.timestamp = System.currentTimeMillis();
+            this.isMaxEvent = isMaxEvent;
         }
 
         public boolean isExpired() {
-            return System.currentTimeMillis() - timestamp > 5000;
+            long duration = isMaxEvent ? 8000L : 5000L;
+            return System.currentTimeMillis() - timestamp > duration;
         }
     }
 
@@ -37,7 +43,7 @@ public class BestiaryTierUpHandler {
     }
 
     public static void onTierUp(String mobName, int newTier, int tiersGained) {
-        activePopups.add(new TierUpEntry(mobName, newTier, tiersGained));
+        activePopups.add(new TierUpEntry(mobName, newTier, tiersGained, false));
         if (activePopups.size() > MAX_POPUPS) {
             activePopups.remove(0);
         }
@@ -46,17 +52,33 @@ public class BestiaryTierUpHandler {
         try {
             Minecraft client = Minecraft.getInstance();
             if (client.player != null) {
+                client.execute(() -> client.player.playSound(
+                        SoundEvents.EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f));
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /**
+     * Called when a mob reaches its final bestiary tier (fully maxed).
+     * Triggers a special rainbow "MAXED" popup with firework sounds.
+     */
+    public static void onMobMaxed(String mobName) {
+        activePopups.add(new TierUpEntry(mobName, -1, 0, true));
+        if (activePopups.size() > MAX_POPUPS) {
+            activePopups.remove(0);
+        }
+
+        // Play firework sounds for the special MAX event
+        try {
+            Minecraft client = Minecraft.getInstance();
+            if (client.player != null) {
                 client.execute(() -> {
-                    client.player.playSound(
-                            SoundEvents.EXPERIENCE_ORB_PICKUP,
-                            1.0f,  // volume
-                            1.0f   // pitch
-                    );
+                    client.player.playSound(SoundEvents.FIREWORK_ROCKET_LAUNCH, 1.0f, 1.0f);
+                    client.player.playSound(SoundEvents.FIREWORK_ROCKET_BLAST, 1.0f, 1.2f);
+                    client.player.playSound(SoundEvents.FIREWORK_ROCKET_TWINKLE, 0.8f, 1.0f);
                 });
             }
-        } catch (Exception e) {
-            // Silently ignore sound errors
-        }
+        } catch (Exception ignored) {}
     }
 
     public static ArrayList getActivePopups() {

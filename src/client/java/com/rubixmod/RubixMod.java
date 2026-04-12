@@ -9,6 +9,8 @@ import com.rubixmod.bestiary.TabListBestiaryReader;
 import com.rubixmod.command.RubixCommand;
 import com.rubixmod.config.RubixConfig;
 import com.rubixmod.dungeon.BatDeathDetector;
+import com.rubixmod.mining.LittlefootTracker;
+import com.rubixmod.mining.LittlefootHud;
 import com.rubixmod.hud.BestiaryHud;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -50,9 +52,13 @@ public class RubixMod implements ClientModInitializer {
         // Register bat death detector
         BatDeathDetector.register();
 
-        // Register HUD rendering (handles both bestiary HUD and tier-up popups)
+        // Register mining features
+        LittlefootTracker.register();
+
+        // Register HUD rendering (handles both bestiary HUD, tier-up popups, and mining overlays)
         HudRenderCallback.EVENT.register((graphics, tickDelta) -> {
             BestiaryHud.render(graphics, RubixConfig.get().bestiaryHudScale);
+            LittlefootHud.render(graphics);
         });
 
         // Connect to Hypixel: start API fetcher

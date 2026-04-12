@@ -40,6 +40,8 @@ public class BestiaryData {
             Map loaded = GSON.fromJson(r, type);
             if (loaded != null) data = loaded;
             else data = new LinkedHashMap();
+            // Remove legacy "Test" category written by the old /rubix testpopup command
+            data.remove("Test");
             RubixMod.LOGGER.info("RubixMod: Loaded bestiary_data.json ({} categories)", data.size());
         } catch (Exception e) {
             RubixMod.LOGGER.error("RubixMod: Failed to load bestiary_data.json", e);
