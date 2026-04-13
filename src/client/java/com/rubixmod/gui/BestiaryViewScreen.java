@@ -68,6 +68,23 @@ public class BestiaryViewScreen extends Screen {
     private final List<String>              categories = new ArrayList<>();
     private final Map<String, List<String>> catMobs    = new LinkedHashMap<>();
 
+    /**
+     * Default pill order for fresh installs (no saved categoryOrder).
+     * Fishing sub-categories are grouped together after their parent,
+     * and event/late-game categories come last.
+     */
+    private static final List<String> DEFAULT_ORDER = Arrays.asList(
+            "Your Island", "Hub", "The Farming Islands", "The Garden",
+            "Spider's Den", "The End", "Crimson Isle", "Deep Caverns",
+            "Dwarven Mines", "Crystal Hollows", "The Park", "Galatea",
+            "Spooky Festival", "The Catacombs",
+            "Fishing > Fishing", "Fishing",
+            "Fishing > Lava", "Fishing > Spooky Festival",
+            "Fishing > Fishing Festival", "Fishing > Winter",
+            "Fishing > Backwater Bayou",
+            "Mythological Creatures", "Jerry", "Kuudra"
+    );
+
     // ── Drag-reorder state ────────────────────────────────────────────────────
     /** Pill that was pressed but not yet confirmed as a drag (still could be a click). */
     private String dragPressedCat = null;
@@ -163,8 +180,15 @@ public class BestiaryViewScreen extends Screen {
             }
         }
 
-        // Default alphabetical sort
-        categories.sort(String::compareToIgnoreCase);
+        // Sort by DEFAULT_ORDER first; categories not listed there sort alphabetically at the end
+        categories.sort((a, b) -> {
+            int ia = DEFAULT_ORDER.indexOf(a);
+            int ib = DEFAULT_ORDER.indexOf(b);
+            if (ia >= 0 && ib >= 0) return Integer.compare(ia, ib);
+            if (ia >= 0) return -1;
+            if (ib >= 0) return 1;
+            return a.compareToIgnoreCase(b);
+        });
 
         // Apply user-defined ordering (if any)
         List<String> savedOrder = RubixConfig.get().categoryOrder;
@@ -794,9 +818,10 @@ public class BestiaryViewScreen extends Screen {
     // ── Utilities ─────────────────────────────────────────────────────────────
 
     static String displayName(String cat) {
-        return cat.startsWith("Bestiary > ") ? cat.substring(11)
-             : cat.startsWith("Fishing > ")  ? cat.substring(9)
-             : cat;
+        // Strip "Bestiary > " prefix for non-fishing categories.
+        // Fishing sub-categories intentionally keep "Fishing > " to distinguish them
+        // from same-named event categories (e.g. "Fishing > Spooky Festival" vs "Spooky Festival").
+        return cat.startsWith("Bestiary > ") ? cat.substring(11) : cat;
     }
 
     private String truncate(String s, int maxW) {
