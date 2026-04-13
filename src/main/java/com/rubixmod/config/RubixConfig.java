@@ -46,6 +46,9 @@ public class RubixConfig {
     // Bestiary UI: set of category keys hidden by the icon filter bar (empty = all visible)
     public java.util.HashSet<String> hiddenCategories = new java.util.HashSet<>();
 
+    // Bestiary UI: user-defined ordering of category pills (empty = alphabetical)
+    public List<String> categoryOrder = new ArrayList<>();
+
     // Persists tier bar start positions across sessions.
     // key = trackedKey ("Category > Mob"), value = "tierNum,tierStart"
     public Map<String, String> tierStartCache = new LinkedHashMap<>();
@@ -81,6 +84,7 @@ public class RubixConfig {
                     if (instance.bestiaryKillData == null) instance.bestiaryKillData = new LinkedHashMap<>();
                     if (instance.collapsedCategories == null) instance.collapsedCategories = new java.util.HashSet<>();
                     if (instance.hiddenCategories == null)   instance.hiddenCategories   = new java.util.HashSet<>();
+                    if (instance.categoryOrder == null)     instance.categoryOrder      = new ArrayList<>();
                     if (instance.tierStartCache == null)     instance.tierStartCache     = new LinkedHashMap<>();
                     if (instance.hudMaxMobs <= 0) instance.hudMaxMobs = 5;
                 }

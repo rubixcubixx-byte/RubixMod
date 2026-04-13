@@ -47,9 +47,6 @@ public class BestiaryViewScreen extends Screen {
     private static final int CAT_PRE   = 20;
     private static final int CAT_PAD   = 6;
 
-    // CONTENT_TOP is dynamic (depends on whether icons wrap to 2 rows)
-    // computed by getContentTop()
-
     // ── State ─────────────────────────────────────────────────────────────────
     private int scroll        = 0;
     private int totalContentH = 0;
@@ -70,6 +67,19 @@ public class BestiaryViewScreen extends Screen {
 
     private final List<String>              categories = new ArrayList<>();
     private final Map<String, List<String>> catMobs    = new LinkedHashMap<>();
+
+    // ── Drag-reorder state ────────────────────────────────────────────────────
+    /** Pill that was pressed but not yet confirmed as a drag (still could be a click). */
+    private String dragPressedCat = null;
+    private int    dragPressX = 0, dragPressY = 0;
+    private int    dragOffsetX = 0, dragOffsetY = 0;
+
+    /** Pill currently being dragged (drag confirmed by movement). */
+    private String draggedCat = null;
+    /** Top-left of the floating dragged pill in screen space. */
+    private int    dragCurX = 0, dragCurY = 0;
+    /** Insertion index into the filtered (without draggedCat) list. */
+    private int    dropIndex = -1;
 
     public BestiaryViewScreen() {
         super(Component.literal("Bestiary"));
@@ -153,7 +163,24 @@ public class BestiaryViewScreen extends Screen {
             }
         }
 
+        // Default alphabetical sort
         categories.sort(String::compareToIgnoreCase);
+
+        // Apply user-defined ordering (if any)
+        List<String> savedOrder = RubixConfig.get().categoryOrder;
+        if (savedOrder != null && !savedOrder.isEmpty()) {
+            List<String> ordered = new ArrayList<>();
+            for (String s : savedOrder) {
+                if (categories.contains(s)) ordered.add(s);
+            }
+            // Any new categories not yet in saved order go at the end
+            for (String s : categories) {
+                if (!ordered.contains(s)) ordered.add(s);
+            }
+            categories.clear();
+            categories.addAll(ordered);
+        }
+
         totalContentH = computeTotalHeight();
     }
 
@@ -189,6 +216,28 @@ public class BestiaryViewScreen extends Screen {
 
     private int columns() {
         return Math.max(1, (width - PADDING * 2 + CARD_GAP) / (CARD_W + CARD_GAP));
+    }
+
+    /**
+     * Computes the top-left [x, y] screen position for each pill in the given list,
+     * using the standard icon-bar wrapping layout.
+     */
+    private List<int[]> layoutPills(List<String> cats) {
+        List<int[]> positions = new ArrayList<>();
+        int barTop = HEADER_H + 1 + FILTER_H + 1;
+        int availW = width - PADDING * 2;
+        int x = PADDING, iy = barTop + PILL_VPAD, rowNum = 0;
+        for (String cat : cats) {
+            int w = pillWidth(cat);
+            if (x > PADDING && x + w > PADDING + availW) {
+                rowNum++;
+                x  = PADDING;
+                iy = barTop + PILL_VPAD + rowNum * (PILL_H + PILL_GAP);
+            }
+            positions.add(new int[]{x, iy});
+            x += w + PILL_GAP;
+        }
+        return positions;
     }
 
     // ── Filtering helpers ─────────────────────────────────────────────────────
@@ -268,7 +317,7 @@ public class BestiaryViewScreen extends Screen {
         g.fill(0, 0, width, HEADER_H, C_HEADER_BG);
         g.fill(0, HEADER_H, width, HEADER_H + 1, C_DIVIDER);
         g.drawString(font, "Bestiary Overview", PADDING, 11, C_ORANGE);
-        String hint = "Click category to collapse  ·  Scroll  ·  ESC";
+        String hint = "Drag pills to reorder  \u00b7  Click pill to filter  \u00b7  Click cat to collapse  \u00b7  ESC";
         g.drawString(font, hint, width - font.width(hint) - PADDING, 11, C_GRAY);
 
         // Filter bar (search + hide MAX)
@@ -292,7 +341,6 @@ public class BestiaryViewScreen extends Screen {
         if (totalContentH > visH) drawScrollBar(g, width - 6, contentTop, 4, visH, maxScroll);
 
         super.render(g, mouseX, mouseY, delta);
-
     }
 
     // ── Icon filter bar ───────────────────────────────────────────────────────
@@ -306,33 +354,66 @@ public class BestiaryViewScreen extends Screen {
 
         iconBounds.clear();
         hoveredIcon = null;
+        RubixConfig cfg = RubixConfig.get();
 
-        RubixConfig cfg    = RubixConfig.get();
-        int availW         = width - PADDING * 2;
-        int x              = PADDING;
-        int iy             = barTop + PILL_VPAD;
-        int rowNum         = 0;
+        if (draggedCat != null) {
+            // ── Drag mode: lay out all pills except the dragged one ───────────
+            List<String> filtered = new ArrayList<>(categories);
+            filtered.remove(draggedCat);
+            List<int[]> positions = layoutPills(filtered);
 
-        for (String cat : categories) {
-            int w = pillWidth(cat);
-
-            // Wrap to next row if no room
-            if (x > PADDING && x + w > PADDING + availW) {
-                rowNum++;
-                x  = PADDING;
-                iy = barTop + PILL_VPAD + rowNum * (PILL_H + PILL_GAP);
+            for (int i = 0; i < filtered.size(); i++) {
+                String cat = filtered.get(i);
+                int px = positions.get(i)[0], py = positions.get(i)[1];
+                int pw = pillWidth(cat);
+                boolean hidden = cfg.hiddenCategories.contains(cat);
+                iconBounds.put(cat, new int[]{px, py, pw, PILL_H});
+                drawPill(g, px, py, pw, PILL_H, hidden, false, getCategoryColor(cat), displayName(cat));
             }
 
-            boolean hidden  = cfg.hiddenCategories.contains(cat);
-            boolean hovered = mouseX >= x && mouseX < x + w
-                           && mouseY >= iy && mouseY < iy + PILL_H;
-            if (hovered) hoveredIcon = cat;
+            // Draw insertion indicator
+            drawDropIndicator(g, filtered, positions, dropIndex);
 
-            iconBounds.put(cat, new int[]{x, iy, w, PILL_H});
-            drawPill(g, x, iy, w, PILL_H, hidden, hovered, getCategoryColor(cat), displayName(cat));
+            // Draw dragged pill floating at cursor (highlighted to show it's active)
+            int dw = pillWidth(draggedCat);
+            boolean dHidden = cfg.hiddenCategories.contains(draggedCat);
+            drawPill(g, dragCurX, dragCurY, dw, PILL_H, dHidden, true, getCategoryColor(draggedCat), displayName(draggedCat));
 
-            x += w + PILL_GAP;
+        } else {
+            // ── Normal mode ──────────────────────────────────────────────────
+            List<int[]> positions = layoutPills(categories);
+            for (int i = 0; i < categories.size(); i++) {
+                String cat = categories.get(i);
+                int px = positions.get(i)[0], py = positions.get(i)[1];
+                int pw = pillWidth(cat);
+                boolean hidden  = cfg.hiddenCategories.contains(cat);
+                boolean hovered = mouseX >= px && mouseX < px + pw
+                               && mouseY >= py && mouseY < py + PILL_H;
+                if (hovered) hoveredIcon = cat;
+                iconBounds.put(cat, new int[]{px, py, pw, PILL_H});
+                drawPill(g, px, py, pw, PILL_H, hidden, hovered, getCategoryColor(cat), displayName(cat));
+            }
         }
+    }
+
+    /** Draws a 2px white vertical insertion indicator at the drop position. */
+    private void drawDropIndicator(GuiGraphics g, List<String> filtered, List<int[]> positions, int idx) {
+        if (idx < 0) return;
+        int gx, gy;
+        if (filtered.isEmpty()) {
+            gx = PADDING - 1;
+            gy = HEADER_H + 1 + FILTER_H + 1 + PILL_VPAD;
+        } else if (idx < filtered.size()) {
+            // Before pill at idx
+            gx = positions.get(idx)[0] - 3;
+            gy = positions.get(idx)[1];
+        } else {
+            // After last pill
+            int[] last = positions.get(positions.size() - 1);
+            gx = last[0] + pillWidth(filtered.get(filtered.size() - 1)) + 2;
+            gy = last[1];
+        }
+        g.fill(gx, gy - 1, gx + 2, gy + PILL_H + 1, 0xFFFFFFFF);
     }
 
     /** Draws a rounded labeled pill for one category. */
@@ -346,13 +427,12 @@ public class BestiaryViewScreen extends Screen {
             border    = hovered ? 0xFF686868 : 0xFF484848;
             textColor = hovered ? 0xFFAAAAAA : 0xFF666666;
         } else {
-            // Active: dark fill tinted by category color, full-color border
             fill      = hovered ? brighten(darken(catColor, 0.3f), 0.15f) : darken(catColor, 0.3f);
             border    = hovered ? brighten(catColor, 0.4f) : catColor;
             textColor = hovered ? C_WHITE : brighten(catColor, 0.3f);
         }
 
-        // Rounded fill (cross-fill technique, radius r)
+        // Rounded fill
         g.fill(x + r, y,         x + w - r, y + h,         fill);
         g.fill(x,     y + r,     x + r,     y + h - r,     fill);
         g.fill(x + w - r, y + r, x + w,     y + h - r,     fill);
@@ -467,7 +547,6 @@ public class BestiaryViewScreen extends Screen {
         long max = hasData ? kills[1] : 0;
         boolean maxed = hasData && max > 0 && cur >= max;
 
-        // Rounded bubble card (3px corner radius via cross-fill + bevel corners)
         int r = 3;
         g.fill(x + r, y,     x + CARD_W - r, y + CARD_H,     C_CARD_BG);
         g.fill(x,     y + r, x + r,          y + CARD_H - r, C_CARD_BG);
@@ -479,18 +558,15 @@ public class BestiaryViewScreen extends Screen {
         g.fill(x,     y + r,          x + 1,          y + CARD_H - r, bd);
         g.fill(x + CARD_W - 1, y + r, x + CARD_W,    y + CARD_H - r, bd);
 
-        // Corner bevel pixels
         g.fill(x + r - 1, y + 1,          x + r,         y + r,         bd);
         g.fill(x + CARD_W - r, y + 1,     x + CARD_W - r + 1, y + r,   bd);
         g.fill(x + r - 1, y + CARD_H - r, x + r,         y + CARD_H - 1, bd);
         g.fill(x + CARD_W - r, y + CARD_H - r, x + CARD_W - r + 1, y + CARD_H - 1, bd);
 
-        // Mob name
         int nameColor = maxed ? C_ORANGE : (hasData ? C_WHITE : C_GRAY_DIM);
         String name = truncate(mob, CARD_W - 8);
         g.drawString(font, name, x + 4, y + 3, nameColor, false);
 
-        // Progress bar
         int barX = x + 4;
         int barY = y + CARD_H - 14;
         int barW = CARD_W - 8;
@@ -533,6 +609,42 @@ public class BestiaryViewScreen extends Screen {
         super.mouseMoved(mouseX, mouseY);
     }
 
+    /**
+     * Returns the insertion index into the list of categories excluding {@code draggedCat}.
+     * Index 0 = before first, index N = after last.
+     */
+    private int computeDropIndex(int mx, int my) {
+        List<String> filtered = new ArrayList<>(categories);
+        filtered.remove(draggedCat);
+        List<int[]> positions = layoutPills(filtered);
+
+        int best    = filtered.size();
+        int bestDist = Integer.MAX_VALUE;
+
+        for (int i = 0; i <= filtered.size(); i++) {
+            int gx, gy;
+            if (i < filtered.size()) {
+                // Gap is at the left edge of pill i
+                gx = positions.get(i)[0];
+                gy = positions.get(i)[1] + PILL_H / 2;
+            } else if (!positions.isEmpty()) {
+                // Gap is just past the right edge of the last pill
+                int[] last = positions.get(positions.size() - 1);
+                gx = last[0] + pillWidth(filtered.get(filtered.size() - 1)) + PILL_GAP;
+                gy = last[1] + PILL_H / 2;
+            } else {
+                gx = PADDING;
+                gy = HEADER_H + 1 + FILTER_H + 1 + PILL_VPAD + PILL_H / 2;
+            }
+            int distSq = (mx - gx) * (mx - gx) + (my - gy) * (my - gy);
+            if (distSq < bestDist) {
+                bestDist = distSq;
+                best     = i;
+            }
+        }
+        return best;
+    }
+
     @Override
     public boolean mouseScrolled(double mx, double my, double ha, double va) {
         int contentTop = getContentTop();
@@ -547,54 +659,105 @@ public class BestiaryViewScreen extends Screen {
         super.tick();
         long window  = GLFW.glfwGetCurrentContext();
         boolean pressed = GLFW.glfwGetMouseButton(window, GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
+        int mx = (int) lastMouseX, my = (int) lastMouseY;
 
+        // ── Drag-in-progress: update position + drop index ────────────────────
+        if (pressed && draggedCat != null) {
+            dragCurX  = mx - dragOffsetX;
+            dragCurY  = my - dragOffsetY;
+            dropIndex = computeDropIndex(mx, my);
+        }
+
+        // ── Pressed but not yet dragging: check movement threshold ────────────
+        if (pressed && dragPressedCat != null && draggedCat == null) {
+            int distSq = (mx - dragPressX) * (mx - dragPressX)
+                       + (my - dragPressY) * (my - dragPressY);
+            if (distSq > 16) { // 4px threshold → confirm drag
+                draggedCat     = dragPressedCat;
+                dragPressedCat = null;
+                dragCurX  = mx - dragOffsetX;
+                dragCurY  = my - dragOffsetY;
+                dropIndex = computeDropIndex(mx, my);
+            }
+        }
+
+        // ── Button released ────────────────────────────────────────────────────
+        if (!pressed && wasPressed) {
+            if (draggedCat != null) {
+                // Commit reorder
+                if (dropIndex >= 0) {
+                    List<String> reordered = new ArrayList<>(categories);
+                    reordered.remove(draggedCat);
+                    int to = clamp(dropIndex, 0, reordered.size());
+                    reordered.add(to, draggedCat);
+                    categories.clear();
+                    categories.addAll(reordered);
+                    RubixConfig.get().categoryOrder = new ArrayList<>(categories);
+                    RubixConfig.save();
+                    totalContentH = computeTotalHeight();
+                }
+                draggedCat = null;
+                dropIndex  = -1;
+                wasPressed = pressed;
+                return;
+            } else if (dragPressedCat != null) {
+                // Short click without drag → toggle-hide
+                String cat = dragPressedCat;
+                dragPressedCat = null;
+                RubixConfig cfg = RubixConfig.get();
+                if (cfg.hiddenCategories.contains(cat)) cfg.hiddenCategories.remove(cat);
+                else cfg.hiddenCategories.add(cat);
+                RubixConfig.save();
+                totalContentH = computeTotalHeight();
+                int contentTop2 = getContentTop();
+                int visH2 = height - contentTop2;
+                scroll = clamp(scroll, 0, Math.max(0, totalContentH - visH2));
+                wasPressed = pressed;
+                return;
+            }
+        }
+
+        // ── Fresh press: detect pill click OR category header collapse ─────────
         if (pressed && !wasPressed) {
             int contentTop = getContentTop();
 
-            // Icon filter bar clicks (above contentTop)
-            for (Map.Entry<String, int[]> entry : iconBounds.entrySet()) {
-                int[] b = entry.getValue();
-                if (lastMouseX >= b[0] && lastMouseX < b[0] + b[2]
-                        && lastMouseY >= b[1] && lastMouseY < b[1] + b[3]) {
-                    String cat = entry.getKey();
-                    RubixConfig cfg = RubixConfig.get();
-                    if (cfg.hiddenCategories.contains(cat)) {
-                        cfg.hiddenCategories.remove(cat);
-                    } else {
-                        cfg.hiddenCategories.add(cat);
-                    }
-                    RubixConfig.save();
-                    totalContentH = computeTotalHeight();
-                    int visH = height - contentTop;
-                    scroll = clamp(scroll, 0, Math.max(0, totalContentH - visH));
-                    wasPressed = true;
+            // Icon pill: record press for drag/click disambiguation
+            for (Map.Entry<String, int[]> e : iconBounds.entrySet()) {
+                int[] b = e.getValue();
+                if (mx >= b[0] && mx < b[0] + b[2] && my >= b[1] && my < b[1] + b[3]) {
+                    dragPressedCat = e.getKey();
+                    dragPressX     = mx;
+                    dragPressY     = my;
+                    dragOffsetX    = mx - b[0];
+                    dragOffsetY    = my - b[1];
+                    dragCurX       = b[0];
+                    dragCurY       = b[1];
+                    wasPressed = pressed;
                     return;
                 }
             }
 
-            // Category header collapse clicks (inside content area)
-            if (lastMouseY >= contentTop) {
+            // Category header collapse (content area only)
+            if (my >= contentTop) {
                 for (Map.Entry<String, int[]> entry : categoryHeaderBounds.entrySet()) {
                     int[] b = entry.getValue();
-                    if (lastMouseX >= b[0] && lastMouseX < b[0] + b[2]
-                            && lastMouseY >= b[1] && lastMouseY < b[1] + b[3]) {
+                    if (mx >= b[0] && mx < b[0] + b[2]
+                            && my >= b[1] && my < b[1] + b[3]) {
                         String cat = entry.getKey();
                         RubixConfig cfg = RubixConfig.get();
-                        if (cfg.collapsedCategories.contains(cat)) {
-                            cfg.collapsedCategories.remove(cat);
-                        } else {
-                            cfg.collapsedCategories.add(cat);
-                        }
+                        if (cfg.collapsedCategories.contains(cat)) cfg.collapsedCategories.remove(cat);
+                        else cfg.collapsedCategories.add(cat);
                         RubixConfig.save();
                         totalContentH = computeTotalHeight();
                         int visH = height - contentTop;
                         scroll = clamp(scroll, 0, Math.max(0, totalContentH - visH));
-                        wasPressed = true;
+                        wasPressed = pressed;
                         return;
                     }
                 }
             }
         }
+
         wasPressed = pressed;
     }
 
@@ -652,7 +815,6 @@ public class BestiaryViewScreen extends Screen {
 
     private static int clamp(int v, int lo, int hi) { return Math.max(lo, Math.min(hi, v)); }
 
-    /** Darkens an ARGB colour by a factor (0.0 = black, 1.0 = original). */
     private static int darken(int color, float f) {
         int a = (color >> 24) & 0xFF;
         int r = (int)(((color >> 16) & 0xFF) * f);
@@ -661,7 +823,6 @@ public class BestiaryViewScreen extends Screen {
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
-    /** Brightens an ARGB colour by a factor (0.0 = no change, 1.0 = white). */
     private static int brighten(int color, float f) {
         int a = (color >> 24) & 0xFF;
         int r = Math.min(255, (int)(((color >> 16) & 0xFF) * (1 + f)));
