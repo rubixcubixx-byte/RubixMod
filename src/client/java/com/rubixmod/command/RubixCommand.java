@@ -36,11 +36,32 @@ public class RubixCommand {
                         )
                         .then(ClientCommandManager.literal("testpopup")
                                 .executes(context -> {
+                                    if (!isDev()) {
+                                        context.getSource().sendFeedback(
+                                                Component.literal("§cThis command can only be used by Devs.")
+                                        );
+                                        return 0;
+                                    }
                                     BestiaryTierUpHandler.onTierUp("Zombie", 3, 1);
                                     BestiaryTierUpHandler.onTierUp("Skeleton", 5, 1);
                                     BestiaryTierUpHandler.onTierUp("Spider", 2, 1);
                                     context.getSource().sendFeedback(
                                             Component.literal("§aRubixMod: Test popups fired!")
+                                    );
+                                    return 1;
+                                })
+                        )
+                        .then(ClientCommandManager.literal("testmaxtier")
+                                .executes(context -> {
+                                    if (!isDev()) {
+                                        context.getSource().sendFeedback(
+                                                Component.literal("§cThis command can only be used by Devs.")
+                                        );
+                                        return 0;
+                                    }
+                                    BestiaryTierUpHandler.onMobMaxed("Zombie");
+                                    context.getSource().sendFeedback(
+                                            Component.literal("§aRubixMod: Max tier test popup fired!")
                                     );
                                     return 1;
                                 })
@@ -68,5 +89,11 @@ public class RubixCommand {
                                 })
                         )
         );
+    }
+
+    private static boolean isDev() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.player != null &&
+                mc.player.getGameProfile().name().equalsIgnoreCase("Rubixcubixx");
     }
 }
