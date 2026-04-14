@@ -15,7 +15,9 @@ import net.minecraft.world.scores.PlayerScoreEntry;
 import net.minecraft.world.scores.Scoreboard;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -31,6 +33,16 @@ public class LittlefootTracker {
 
     private static final List<Entity> tracked = new ArrayList<>();
 
+    /** Entity IDs that have already had their coords posted to party chat. */
+    private static final Set<Integer> announcedIds = new HashSet<>();
+
+    /**
+     * Block positions [x, y, z] of every Littlefoot that has been announced.
+     * Used to deduplicate announcements when the same mob re-enters tracking range
+     * with a different entity ID (Hypixel assigns a new ID on each re-spawn packet).
+     */
+    private static final List<int[]> announcedPositions = new ArrayList<>();
+
     // ── Mineshaft state (re-checked every 20 ticks) ───────────────────────────
     private static boolean inMineshaft    = false;
     private static int     locationTick   = 0;
@@ -41,9 +53,10 @@ public class LittlefootTracker {
     public static long getLastDetectionTime() { return lastDetectionTime; }
 
     // ── Remote detection (another player found one) ───────────────────────────
-    // Parses party chat: "Party > [RANK] Name: [RubixMod] LITTLEFOOT found! ..."
+    // Parses party chat including the coordinates so we can check for same-instance duplicates.
+    // Format: "Party > [RANK] Name: [RubixMod] LITTLEFOOT found! Coords: X, Y, Z"
     private static final Pattern PARTY_LITTLEFOOT = Pattern.compile(
-            "Party > (?:\\[.+?\\] )?(\\w+): \\[RubixMod\\] LITTLEFOOT found!");
+            "Party > (?:\\[.+?\\] )?(\\w+): \\[RubixMod\\] LITTLEFOOT found! Coords: (-?\\d+), (-?\\d+), (-?\\d+)");
     private static String remoteFinderName   = null;
     private static long   remoteDetectionTime = 0;
     public static String getRemoteFinderName()    { return remoteFinderName; }
@@ -71,12 +84,28 @@ public class LittlefootTracker {
             if (mc.player != null && finder.equalsIgnoreCase(
                     mc.player.getGameProfile().name())) return;
 
+            // Parse the coordinates from the remote message
+            double rx = Double.parseDouble(m.group(2));
+            double ry = Double.parseDouble(m.group(3));
+            double rz = Double.parseDouble(m.group(4));
+
+            // If we're already tracking a Littlefoot at nearly the same position,
+            // we're in the same instance — suppress the remote popup to avoid duplicate alerts.
+            for (Entity e : tracked) {
+                double dx = e.getX() - rx;
+                double dy = e.getY() - ry;
+                double dz = e.getZ() - rz;
+                if (dx * dx + dy * dy + dz * dz < 10 * 10) return; // within 10 blocks = same mob
+            }
+
             remoteFinderName    = finder;
             remoteDetectionTime = System.currentTimeMillis();
         });
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
             tracked.clear();
+            announcedIds.clear();
+            announcedPositions.clear();
             inMineshaft    = false;
             locationTick   = LOCATION_CHECK_INTERVAL; // check immediately on first tick
             beepsRemaining = 0;
@@ -111,6 +140,8 @@ public class LittlefootTracker {
                 inMineshaft  = checkIsInGlaciteMineshaft();
                 if (!inMineshaft) {
                     tracked.clear();
+                    announcedIds.clear();
+                    announcedPositions.clear();
                     return;
                 }
             }
@@ -119,7 +150,6 @@ public class LittlefootTracker {
             if (!inMineshaft) return;
 
             // ── Scan every tick ───────────────────────────────────────────────
-            boolean wasEmpty = tracked.isEmpty();
             tracked.clear();
 
             try {
@@ -136,19 +166,55 @@ public class LittlefootTracker {
             }
 
             // ── New detection event ───────────────────────────────────────────
-            if (!tracked.isEmpty() && wasEmpty) {
+            // Build a list of Littlefoots that haven't been announced yet.
+            // Each one gets its own party chat message so teammates get separate
+            // waypoints for each individual mob.
+            //
+            // Two-layer deduplication:
+            //  1. Entity ID — fast path, same ID = definitely same mob
+            //  2. Position  — catches the case where Hypixel sends a new spawn
+            //     packet (new entity ID) when the mob re-enters tracking range
+            List<Entity> newlyFound = new ArrayList<>();
+            for (Entity e : tracked) {
+                // Fast path: already announced by ID
+                if (announcedIds.contains(e.getId())) continue;
+
+                int fx = (int) Math.floor(e.getX());
+                int fy = (int) Math.floor(e.getY());
+                int fz = (int) Math.floor(e.getZ());
+
+                // Position check: within 8 blocks of a previously announced mob?
+                boolean nearKnown = false;
+                for (int[] pos : announcedPositions) {
+                    int dx = fx - pos[0], dy = fy - pos[1], dz = fz - pos[2];
+                    if (dx * dx + dy * dy + dz * dz <= 8 * 8) {
+                        nearKnown = true;
+                        break;
+                    }
+                }
+
+                // Register the new ID regardless so future ticks hit the fast path
+                announcedIds.add(e.getId());
+
+                if (nearKnown) continue; // same mob, new ID — skip alert
+
+                announcedPositions.add(new int[]{fx, fy, fz});
+                newlyFound.add(e);
+            }
+
+            if (!newlyFound.isEmpty()) {
                 lastDetectionTime = System.currentTimeMillis();
                 beepsRemaining    = 3;
                 beepCooldown      = 1;
 
                 if (client.getConnection() != null) {
-                    // Grab coords of the first Littlefoot found — only posted once per detection
-                    Entity first = tracked.get(0);
-                    int fx = (int) Math.floor(first.getX());
-                    int fy = (int) Math.floor(first.getY());
-                    int fz = (int) Math.floor(first.getZ());
-                    client.getConnection().sendCommand(
-                            "pc [RubixMod] LITTLEFOOT found! Coords: " + fx + ", " + fy + ", " + fz);
+                    for (Entity e : newlyFound) {
+                        int fx = (int) Math.floor(e.getX());
+                        int fy = (int) Math.floor(e.getY());
+                        int fz = (int) Math.floor(e.getZ());
+                        client.getConnection().sendCommand(
+                                "pc [RubixMod] LITTLEFOOT found! Coords: " + fx + ", " + fy + ", " + fz);
+                    }
                 }
             }
         });
