@@ -302,8 +302,10 @@ public class BestiaryHud {
         }
 
         int lineH   = 11;
-        int centerX = (int) cfg.alertsX;
-        int centerY = (int) cfg.alertsY;
+        // If the user has never opened the HUD editor, alertsX/Y default to -1.
+        // Fall back to a sensible position (horizontal center, upper quarter of screen).
+        int centerX = cfg.alertsX > 0 ? (int) cfg.alertsX : screenW / 2;
+        int centerY = cfg.alertsY > 0 ? (int) cfg.alertsY : screenH / 4;
         float s     = cfg.alertsScale;
         // Total lines: conditionally 1 for XP + 1 per popup entry
         int totalLines = (totalXP > 0 ? 1 : 0) + popups.size();
