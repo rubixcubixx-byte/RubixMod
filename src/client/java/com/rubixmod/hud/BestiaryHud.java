@@ -301,30 +301,35 @@ public class BestiaryHud {
             if (!e.isMaxEvent) totalXP += e.tiersGained;
         }
 
-        int lineH   = 11;
+        int lineH    = 11;
+        float maxScale = 2.5f;               // MAX event text is drawn at this scale
+        int maxLineH = (int)(lineH * maxScale); // pixels allocated per MAX entry
+
         // If the user has never opened the HUD editor, alertsX/Y default to -1.
         // Fall back to a sensible position (horizontal center, upper quarter of screen).
         int centerX = cfg.alertsX > 0 ? (int) cfg.alertsX : screenW / 2;
         int centerY = cfg.alertsY > 0 ? (int) cfg.alertsY : screenH / 4;
         float s     = cfg.alertsScale;
-        // Total lines: conditionally 1 for XP + 1 per popup entry
-        int totalLines = (totalXP > 0 ? 1 : 0) + popups.size();
-        int totalH     = totalLines * lineH;
-        int startY     = centerY - totalH / 2;
+
+        // Total height: XP line + each entry (MAX entries take more space)
+        int totalH = totalXP > 0 ? lineH : 0;
+        for (int i = 0; i < popups.size(); i++) {
+            BestiaryTierUpHandler.TierUpEntry e = (BestiaryTierUpHandler.TierUpEntry) popups.get(i);
+            totalH += e.isMaxEvent ? maxLineH : lineH;
+        }
+        int curY = centerY - totalH / 2;
 
         g.pose().pushMatrix();
         g.pose().translate(centerX, centerY);
         g.pose().scale(s, s);
         g.pose().translate(-centerX, -centerY);
 
-        int lineOffset = 0;
-
         // XP line (only when there are normal tier-up entries)
         if (totalXP > 0) {
             String xpLine  = "+" + totalXP + " Skyblock XP";
             int    cyanCol = (a << 24) | 0x55FFFF;
-            g.drawString(font, xpLine, centerX - font.width(xpLine) / 2, startY, cyanCol, true);
-            lineOffset = 1;
+            g.drawString(font, xpLine, centerX - font.width(xpLine) / 2, curY, cyanCol, true);
+            curY += lineH;
         }
 
         // Rainbow color palette for MAX events
@@ -333,22 +338,28 @@ public class BestiaryHud {
         for (int i = 0; i < popups.size(); i++) {
             BestiaryTierUpHandler.TierUpEntry entry =
                     (BestiaryTierUpHandler.TierUpEntry) popups.get(i);
-            int lineY = startY + (i + lineOffset) * lineH;
 
             if (entry.isMaxEvent) {
-                // Cycling rainbow color
+                // Draw MAX line at maxScale, centered on (centerX, curY)
                 int rainbowIdx = (int) ((System.currentTimeMillis() / 100) % rainbowPalette.length);
                 int rainbowCol = (a << 24) | rainbowPalette[rainbowIdx];
-                String maxLine = "\u2605 " + entry.mobName + " MAXED \u2605";
+                String maxLine = "\u2605 " + entry.mobName + " MAXED! \u2605";
+                g.pose().pushMatrix();
+                g.pose().translate(centerX, curY);
+                g.pose().scale(maxScale, maxScale);
+                g.pose().translate(-centerX, -curY);
                 g.drawString(font, maxLine,
                         centerX - font.width(maxLine) / 2,
-                        lineY, rainbowCol, true);
+                        curY, rainbowCol, true);
+                g.pose().popMatrix();
+                curY += maxLineH;
             } else {
                 int greenCol = (a << 24) | 0x55FF55;
                 String line = entry.mobName + " reached Tier " + entry.newTier + "!";
                 g.drawString(font, line,
                         centerX - font.width(line) / 2,
-                        lineY, greenCol, true);
+                        curY, greenCol, true);
+                curY += lineH;
             }
         }
 
