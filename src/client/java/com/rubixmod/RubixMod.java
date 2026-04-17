@@ -9,6 +9,7 @@ import com.rubixmod.bestiary.TabListBestiaryReader;
 import com.rubixmod.command.RubixCommand;
 import com.rubixmod.config.RubixConfig;
 import com.rubixmod.dungeon.BatDeathDetector;
+import com.rubixmod.entity.EntityGlowManager;
 import com.rubixmod.mining.LittlefootTracker;
 import com.rubixmod.mining.LittlefootHud;
 import com.rubixmod.hud.BestiaryHud;
@@ -54,6 +55,9 @@ public class RubixMod implements ClientModInitializer {
 
         // Register mining features
         LittlefootTracker.register();
+
+        // Register entity glow manager (Littlefoot + HUD mob shape-matched outlines)
+        EntityGlowManager.register();
 
         // Register HUD rendering (handles both bestiary HUD, tier-up popups, and mining overlays)
         HudRenderCallback.EVENT.register((graphics, tickDelta) -> {
