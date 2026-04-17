@@ -20,7 +20,8 @@
 		]
 	},
 	"mixins": [
-		"rubixmod.mixins.json"
+		"rubixmod.mixins.json",
+		"modid.client.mixins.json"
 	],
 	"depends": {
 		"fabricloader": ">=0.16.9",
