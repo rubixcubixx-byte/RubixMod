@@ -63,15 +63,6 @@ public class BestiaryTierUpHandler {
      * Triggers a special rainbow "MAXED" popup with firework sounds.
      */
     public static void onMobMaxed(String mobName) {
-        // Remove any regular tier-up entry for this mob that fired at the same time.
-        // This prevents the "reached Tier X" popup showing alongside the MAXED popup.
-        for (int i = activePopups.size() - 1; i >= 0; i--) {
-            TierUpEntry e = (TierUpEntry) activePopups.get(i);
-            if (!e.isMaxEvent && e.mobName.equalsIgnoreCase(mobName)) {
-                activePopups.remove(i);
-            }
-        }
-
         activePopups.add(new TierUpEntry(mobName, -1, 0, true));
         if (activePopups.size() > MAX_POPUPS) {
             activePopups.remove(0);
