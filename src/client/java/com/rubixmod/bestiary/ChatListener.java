@@ -2,6 +2,7 @@ package com.rubixmod.bestiary;
 
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -37,6 +38,9 @@ public class ChatListener {
 
                 if (newTier > 0 && newTier > oldTier) {
                     BestiaryTierUpHandler.onTierUp(mobName, newTier, newTier - oldTier);
+                    // If the new tier equals the stored cap tier, fire the MAX popup
+                    // simultaneously — same tick, same chat message
+                    checkAndFireMaxPopup(mobName, newTier);
                 }
                 return;
             }
@@ -49,9 +53,54 @@ public class ChatListener {
 
                 if (newTier > 0) {
                     BestiaryTierUpHandler.onTierUp(mobName, newTier, 1);
+                    checkAndFireMaxPopup(mobName, newTier);
                 }
             }
         });
+    }
+
+    /**
+     * Checks whether the given tier equals the stored cap tier for any category that
+     * contains this mob. If so, fires the MAX popup exactly once (guarded by isMaxed).
+     */
+    private static void checkAndFireMaxPopup(String mobName, int newTier) {
+        // Search regular categories
+        for (Object catObj : BestiaryMobList.CATEGORIES.keySet()) {
+            String cat = (String) catObj;
+            if (cat.equals("Fishing")) continue;
+            List mobs = (List) BestiaryMobList.CATEGORIES.get(cat);
+            if (mobs == null) continue;
+            for (Object mobObj : mobs) {
+                if (!((String) mobObj).equalsIgnoreCase(mobName)) continue;
+                int capTier = BestiaryData.getCapTier(cat, mobName);
+                if (capTier > 0 && newTier >= capTier) {
+                    String trackedKey = cat + " > " + mobName;
+                    if (!TabListBestiaryReader.isMaxed(trackedKey)) {
+                        TabListBestiaryReader.markMaxed(trackedKey);
+                        BestiaryTierUpHandler.onMobMaxed(mobName);
+                    }
+                    return; // Only fire once even if mob is in multiple categories
+                }
+            }
+        }
+        // Search fishing subcategories
+        for (Object subKeyObj : BestiaryMobList.FISHING_SUBCATEGORY_KEYS) {
+            String subKey = (String) subKeyObj;
+            List mobs = (List) BestiaryMobList.FISHING_SUBCATEGORIES.get(subKey);
+            if (mobs == null) continue;
+            for (Object mobObj : mobs) {
+                if (!((String) mobObj).equalsIgnoreCase(mobName)) continue;
+                int capTier = BestiaryData.getCapTier(subKey, mobName);
+                if (capTier > 0 && newTier >= capTier) {
+                    String trackedKey = subKey + " > " + mobName;
+                    if (!TabListBestiaryReader.isMaxed(trackedKey)) {
+                        TabListBestiaryReader.markMaxed(trackedKey);
+                        BestiaryTierUpHandler.onMobMaxed(mobName);
+                    }
+                    return;
+                }
+            }
+        }
     }
 
     private static int fromRoman(String roman) {

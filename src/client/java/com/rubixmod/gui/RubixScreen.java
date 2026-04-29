@@ -24,8 +24,16 @@ public class RubixScreen extends Screen {
     private static final int COLOR_GREEN      = 0xFF55FF55;
     private static final int COLOR_RED        = 0xFFFF5555;
 
-    private static final int SIDEBAR_WIDTH = 160;
-    private static final int HEADER_HEIGHT = 50;
+    private static final int SIDEBAR_WIDTH  = 160;
+    private static final int HEADER_HEIGHT  = 50;
+
+    /**
+     * Fixed X position for the left edge of every control (toggle, button, +/-).
+     * Anchored to the content area rather than the screen width so controls stay
+     * close to their labels on any screen size and are always vertically aligned.
+     * 400 px from the content left edge clears the longest description line.
+     */
+    private static final int CTRL_X = SIDEBAR_WIDTH + 20 + 400; // = 580
 
     private static final String MOD_VERSION = FabricLoader.getInstance()
             .getModContainer("rubixmod")
@@ -38,6 +46,9 @@ public class RubixScreen extends Screen {
     private double lastMouseX, lastMouseY;
     private boolean wasPressed = false;
 
+    // All active sliders — populated in addXxxButtons, cleared on rebuildWidgets.
+    private final List<ToggleSliderWidget> sliders = new ArrayList<>();
+
     private BestiaryHudEditorScreen editorOverlay = null;
 
     private String searchQuery = "";
@@ -47,24 +58,33 @@ public class RubixScreen extends Screen {
     private record Setting(String label, String description, String tabName) {}
 
     private static final List<Setting> ALL_SETTINGS = List.of(
-            new Setting("Bestiary HUD",          "Shows bestiary completion info on screen",                  "Bestiary"),
-            new Setting("Auto Track",             "HUD shows mobs you're actively killing (tab list)",        "Bestiary"),
-            new Setting("Bestiary HUD Editor",    "Choose which mobs to track on the HUD",                   "Bestiary"),
-            new Setting("Bestiary Alerts",        "Shows popups when you reach a new tier",                  "Bestiary"),
-            new Setting("HUD Progress Display",   "Show kills toward max, or just toward the next tier",     "Bestiary"),
-            new Setting("Max HUD Mobs",           "How many mobs can appear on the HUD at once (1-15)",      "Bestiary"),
-            new Setting("Bat Death Alert",        "Shows BAT KILLED title when you kill a bat in Catacombs", "Dungeons"),
-            new Setting("Littlefoot Tracker",     "Highlights Littlefoot mobs with an outline and tracer line", "Mining"),
-            new Setting("Hypixel API Key",        "Configure your Hypixel API key",                          "API")
+            new Setting("Bestiary HUD",             "Shows bestiary completion info on screen",                  "Bestiary"),
+            new Setting("Auto Track",               "HUD shows mobs you're actively killing (tab list)",        "Bestiary"),
+            new Setting("Bestiary HUD Editor",      "Choose which mobs to track on the HUD",                   "Bestiary"),
+            new Setting("Bestiary Alerts",          "Shows popups when you reach a new tier",                  "Bestiary"),
+            new Setting("HUD Progress Display",     "Show kills toward max, or just toward the next tier",     "Bestiary"),
+            new Setting("Max HUD Mobs",             "How many mobs can appear on the HUD at once (1-15)",      "Bestiary"),
+            new Setting("Highlight Bestiary Mobs",  "Draws a colored outline around tracked bestiary mobs",    "Bestiary"),
+            new Setting("Bat Death Alert",          "Shows BAT KILLED title when you kill a bat in Catacombs", "Dungeons"),
+            new Setting("Littlefoot Tracker",       "Highlights Littlefoot mobs with an outline and tracer line", "Mining"),
+            new Setting("Hypixel API Key",          "Configure your Hypixel API key",                          "API")
     );
 
     public RubixScreen() {
         super(Component.literal("RubixMod"));
     }
 
+    /** Register a slider so the GLFW polling loop can dispatch clicks to it. */
+    private ToggleSliderWidget addSlider(ToggleSliderWidget slider) {
+        addRenderableWidget(slider);
+        sliders.add(slider);
+        return slider;
+    }
+
     @Override
     protected void init() {
         clearWidgets();
+        sliders.clear();
         RubixConfig cfg = RubixConfig.get();
 
         // Search box — right side of header, in the content area
@@ -99,59 +119,46 @@ public class RubixScreen extends Screen {
     // ── Button helpers ────────────────────────────────────────────────────────
 
     private void addBestiaryButtons(RubixConfig cfg, int contentY) {
-        addRenderableWidget(Button.builder(
-                        cfg.hudEnabled ? on() : off(),
-                        btn -> { cfg.hudEnabled = !cfg.hudEnabled; RubixConfig.save(); rebuildWidgets(); })
-                .bounds(width - 80, contentY + 22, 60, 16).build());
+        addSlider(new ToggleSliderWidget(CTRL_X, contentY + 22, cfg.hudEnabled,
+                v -> { cfg.hudEnabled = v; RubixConfig.save(); }));
 
-        addRenderableWidget(Button.builder(
-                        cfg.hudAutoTrack ? on() : off(),
-                        btn -> { cfg.hudAutoTrack = !cfg.hudAutoTrack; RubixConfig.save(); rebuildWidgets(); })
-                .bounds(width - 80, contentY + 52, 60, 16).build());
+        addSlider(new ToggleSliderWidget(CTRL_X, contentY + 52, cfg.hudAutoTrack,
+                v -> { cfg.hudAutoTrack = v; RubixConfig.save(); }));
 
         addRenderableWidget(Button.builder(
                         Component.literal("Edit"), btn -> openEditor())
-                .bounds(width - 80, contentY + 82, 60, 16).build());
+                .bounds(CTRL_X, contentY + 82, 50, 14).build());
 
-        addRenderableWidget(Button.builder(
-                        cfg.bestiaryAlertsEnabled ? on() : off(),
-                        btn -> { cfg.bestiaryAlertsEnabled = !cfg.bestiaryAlertsEnabled; RubixConfig.save(); rebuildWidgets(); })
-                .bounds(width - 80, contentY + 112, 60, 16).build());
+        addSlider(new ToggleSliderWidget(CTRL_X, contentY + 112, cfg.bestiaryAlertsEnabled,
+                v -> { cfg.bestiaryAlertsEnabled = v; RubixConfig.save(); }));
 
         addRenderableWidget(Button.builder(
                         cfg.hudPerTierMode ? perTier() : maxKills(),
                         btn -> { cfg.hudPerTierMode = !cfg.hudPerTierMode; RubixConfig.save(); rebuildWidgets(); })
-                .bounds(width - 90, contentY + 142, 70, 16).build());
+                .bounds(CTRL_X, contentY + 142, 70, 14).build());
 
         // Max HUD Mobs: [-] N [+]
         addRenderableWidget(Button.builder(
                         Component.literal("-"),
-                        btn -> {
-                            cfg.hudMaxMobs = Math.max(1, cfg.hudMaxMobs - 1);
-                            RubixConfig.save(); rebuildWidgets();
-                        })
-                .bounds(width - 90, contentY + 172, 20, 16).build());
+                        btn -> { cfg.hudMaxMobs = Math.max(1, cfg.hudMaxMobs - 1); RubixConfig.save(); rebuildWidgets(); })
+                .bounds(CTRL_X, contentY + 172, 20, 14).build());
         addRenderableWidget(Button.builder(
                         Component.literal("+"),
-                        btn -> {
-                            cfg.hudMaxMobs = Math.min(15, cfg.hudMaxMobs + 1);
-                            RubixConfig.save(); rebuildWidgets();
-                        })
-                .bounds(width - 50, contentY + 172, 20, 16).build());
+                        btn -> { cfg.hudMaxMobs = Math.min(15, cfg.hudMaxMobs + 1); RubixConfig.save(); rebuildWidgets(); })
+                .bounds(CTRL_X + 44, contentY + 172, 20, 14).build());
+
+        addSlider(new ToggleSliderWidget(CTRL_X, contentY + 202, cfg.highlightBestiaryMobs,
+                v -> { cfg.highlightBestiaryMobs = v; RubixConfig.save(); }));
     }
 
     private void addDungeonsButtons(RubixConfig cfg, int contentY) {
-        addRenderableWidget(Button.builder(
-                        cfg.batDeathAlertEnabled ? on() : off(),
-                        btn -> { cfg.batDeathAlertEnabled = !cfg.batDeathAlertEnabled; RubixConfig.save(); rebuildWidgets(); })
-                .bounds(width - 80, contentY + 22, 60, 16).build());
+        addSlider(new ToggleSliderWidget(CTRL_X, contentY + 22, cfg.batDeathAlertEnabled,
+                v -> { cfg.batDeathAlertEnabled = v; RubixConfig.save(); }));
     }
 
     private void addMiningButtons(RubixConfig cfg, int contentY) {
-        addRenderableWidget(Button.builder(
-                        cfg.littlefootTrackerEnabled ? on() : off(),
-                        btn -> { cfg.littlefootTrackerEnabled = !cfg.littlefootTrackerEnabled; RubixConfig.save(); rebuildWidgets(); })
-                .bounds(width - 80, contentY + 22, 60, 16).build());
+        addSlider(new ToggleSliderWidget(CTRL_X, contentY + 22, cfg.littlefootTrackerEnabled,
+                v -> { cfg.littlefootTrackerEnabled = v; RubixConfig.save(); }));
     }
 
     private void addSearchResultButtons(RubixConfig cfg) {
@@ -163,43 +170,35 @@ public class RubixScreen extends Screen {
     }
 
     private void addButtonForSetting(RubixConfig cfg, Setting s, int rowY) {
-        int btnY = rowY + 6;
+        int sliderY = rowY + 7;
         switch (s.label()) {
-            case "Bestiary HUD" -> addRenderableWidget(Button.builder(
-                            cfg.hudEnabled ? on() : off(),
-                            btn -> { cfg.hudEnabled = !cfg.hudEnabled; RubixConfig.save(); rebuildAndRefocus(); })
-                    .bounds(width - 80, btnY, 60, 16).build());
-            case "Auto Track" -> addRenderableWidget(Button.builder(
-                            cfg.hudAutoTrack ? on() : off(),
-                            btn -> { cfg.hudAutoTrack = !cfg.hudAutoTrack; RubixConfig.save(); rebuildAndRefocus(); })
-                    .bounds(width - 80, btnY, 60, 16).build());
+            case "Bestiary HUD" -> addSlider(new ToggleSliderWidget(CTRL_X, sliderY, cfg.hudEnabled,
+                    v -> { cfg.hudEnabled = v; RubixConfig.save(); rebuildAndRefocus(); }));
+            case "Auto Track" -> addSlider(new ToggleSliderWidget(CTRL_X, sliderY, cfg.hudAutoTrack,
+                    v -> { cfg.hudAutoTrack = v; RubixConfig.save(); rebuildAndRefocus(); }));
             case "Bestiary HUD Editor" -> addRenderableWidget(Button.builder(
                             Component.literal("Edit"), btn -> openEditor())
-                    .bounds(width - 80, btnY, 60, 16).build());
-            case "Bestiary Alerts" -> addRenderableWidget(Button.builder(
-                            cfg.bestiaryAlertsEnabled ? on() : off(),
-                            btn -> { cfg.bestiaryAlertsEnabled = !cfg.bestiaryAlertsEnabled; RubixConfig.save(); rebuildAndRefocus(); })
-                    .bounds(width - 80, btnY, 60, 16).build());
+                    .bounds(CTRL_X, sliderY, 50, 14).build());
+            case "Bestiary Alerts" -> addSlider(new ToggleSliderWidget(CTRL_X, sliderY, cfg.bestiaryAlertsEnabled,
+                    v -> { cfg.bestiaryAlertsEnabled = v; RubixConfig.save(); rebuildAndRefocus(); }));
             case "HUD Progress Display" -> addRenderableWidget(Button.builder(
                             cfg.hudPerTierMode ? perTier() : maxKills(),
                             btn -> { cfg.hudPerTierMode = !cfg.hudPerTierMode; RubixConfig.save(); rebuildAndRefocus(); })
-                    .bounds(width - 90, btnY, 70, 16).build());
+                    .bounds(CTRL_X, sliderY, 70, 14).build());
             case "Max HUD Mobs" -> {
                 addRenderableWidget(Button.builder(Component.literal("-"),
                                 btn -> { cfg.hudMaxMobs = Math.max(1, cfg.hudMaxMobs - 1); RubixConfig.save(); rebuildAndRefocus(); })
-                        .bounds(width - 90, btnY, 20, 16).build());
+                        .bounds(CTRL_X, sliderY, 20, 14).build());
                 addRenderableWidget(Button.builder(Component.literal("+"),
                                 btn -> { cfg.hudMaxMobs = Math.min(15, cfg.hudMaxMobs + 1); RubixConfig.save(); rebuildAndRefocus(); })
-                        .bounds(width - 50, btnY, 20, 16).build());
+                        .bounds(CTRL_X + 44, sliderY, 20, 14).build());
             }
-            case "Bat Death Alert" -> addRenderableWidget(Button.builder(
-                            cfg.batDeathAlertEnabled ? on() : off(),
-                            btn -> { cfg.batDeathAlertEnabled = !cfg.batDeathAlertEnabled; RubixConfig.save(); rebuildAndRefocus(); })
-                    .bounds(width - 80, btnY, 60, 16).build());
-            case "Littlefoot Tracker" -> addRenderableWidget(Button.builder(
-                            cfg.littlefootTrackerEnabled ? on() : off(),
-                            btn -> { cfg.littlefootTrackerEnabled = !cfg.littlefootTrackerEnabled; RubixConfig.save(); rebuildAndRefocus(); })
-                    .bounds(width - 80, btnY, 60, 16).build());
+            case "Highlight Bestiary Mobs" -> addSlider(new ToggleSliderWidget(CTRL_X, sliderY, cfg.highlightBestiaryMobs,
+                    v -> { cfg.highlightBestiaryMobs = v; RubixConfig.save(); rebuildAndRefocus(); }));
+            case "Bat Death Alert" -> addSlider(new ToggleSliderWidget(CTRL_X, sliderY, cfg.batDeathAlertEnabled,
+                    v -> { cfg.batDeathAlertEnabled = v; RubixConfig.save(); rebuildAndRefocus(); }));
+            case "Littlefoot Tracker" -> addSlider(new ToggleSliderWidget(CTRL_X, sliderY, cfg.littlefootTrackerEnabled,
+                    v -> { cfg.littlefootTrackerEnabled = v; RubixConfig.save(); rebuildAndRefocus(); }));
         }
     }
 
@@ -222,8 +221,6 @@ public class RubixScreen extends Screen {
 
     // ── Label helpers ─────────────────────────────────────────────────────────
 
-    private static Component on()       { return Component.literal("ON").withStyle(s -> s.withColor(0x55FF55)); }
-    private static Component off()      { return Component.literal("OFF").withStyle(s -> s.withColor(0xFF5555)); }
     private static Component perTier()  { return Component.literal("Per Tier").withStyle(s -> s.withColor(0x55FFFF)); }
     private static Component maxKills() { return Component.literal("Max Kills").withStyle(s -> s.withColor(0xFFAA00)); }
 
@@ -292,8 +289,10 @@ public class RubixScreen extends Screen {
             g.drawString(font, "Show kills toward max, or just toward the next tier", contentX, contentY + 153, COLOR_GRAY);
             g.drawString(font, "Max HUD Mobs", contentX, contentY + 172, COLOR_WHITE);
             g.drawString(font, "How many mobs show on the HUD at once (1-15)", contentX, contentY + 183, COLOR_GRAY);
-            int mobLabelX = width - 90 + 22;
-            g.drawString(font, String.valueOf(cfg.hudMaxMobs), mobLabelX, contentY + 175, COLOR_WHITE);
+            // Number sits between the [-] and [+] buttons
+            g.drawString(font, String.valueOf(cfg.hudMaxMobs), CTRL_X + 24, contentY + 175, COLOR_WHITE);
+            g.drawString(font, "Highlight Bestiary Mobs", contentX, contentY + 202, COLOR_WHITE);
+            g.drawString(font, "Draws a colored outline around tracked bestiary mobs", contentX, contentY + 213, COLOR_GRAY);
 
         } else if (selectedTab == 1) {
             g.drawString(font, "Dungeons", contentX, contentY, COLOR_WHITE);
@@ -379,6 +378,12 @@ public class RubixScreen extends Screen {
         boolean pressed = GLFW.glfwGetMouseButton(window, GLFW.GLFW_MOUSE_BUTTON_LEFT) == GLFW.GLFW_PRESS;
 
         if (pressed && !wasPressed) {
+            // Dispatch click to sliders first
+            for (ToggleSliderWidget slider : sliders) {
+                if (slider.handleClick(lastMouseX, lastMouseY)) break;
+            }
+
+            // Tab selection
             int tabY = HEADER_HEIGHT + 20;
             for (int i = 0; i < TAB_NAMES.length; i++) {
                 if (lastMouseX >= 0 && lastMouseX <= SIDEBAR_WIDTH

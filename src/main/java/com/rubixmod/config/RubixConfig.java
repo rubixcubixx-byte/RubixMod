@@ -22,6 +22,7 @@ public class RubixConfig {
     public boolean blazeSolverEnabled = false;
     public boolean batDeathAlertEnabled = true;
     public boolean littlefootTrackerEnabled = true;
+    public boolean highlightBestiaryMobs = true;
     public String hypixelApiKey = "";
 
     // Bestiary HUD position and scale
@@ -87,6 +88,7 @@ public class RubixConfig {
                     if (instance.categoryOrder == null)     instance.categoryOrder      = new ArrayList<>();
                     if (instance.tierStartCache == null)     instance.tierStartCache     = new LinkedHashMap<>();
                     if (instance.hudMaxMobs <= 0) instance.hudMaxMobs = 5;
+                    // highlightBestiaryMobs is a new field; default to true for existing configs.
                 }
             } else {
                 instance = new RubixConfig();

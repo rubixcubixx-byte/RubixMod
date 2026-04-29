@@ -69,6 +69,39 @@ public class BestiaryData {
     }
 
     /**
+     * Store the cap tier for a mob (the tier number at which the mob is fully maxed,
+     * e.g. 15 for "Capped at Tier XV").  Stored as a 3rd element in the kills list.
+     * Must be called after saveMob so the list already exists.
+     */
+    public static void saveCapTier(String category, String mobName, int capTier) {
+        Map catData = (Map) data.get(category);
+        if (catData == null) return;
+        List kills = (List) catData.get(mobName);
+        if (kills == null) return;
+        if (kills.size() < 3) {
+            kills.add((long) capTier);
+        } else {
+            kills.set(2, (long) capTier);
+        }
+    }
+
+    /**
+     * Get the stored cap tier for a mob.
+     * Returns -1 if the cap tier has not been stored yet (mob not yet seen in /bestiary menu).
+     */
+    public static int getCapTier(String category, String mobName) {
+        Map catData = (Map) data.get(category);
+        if (catData == null) return -1;
+        List kills = (List) catData.get(mobName);
+        if (kills == null || kills.size() < 3) return -1;
+        try {
+            return ((Number) kills.get(2)).intValue();
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    /**
      * Get kill data for a mob in a specific category.
      * Returns [current, max] or null if not found.
      */

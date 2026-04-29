@@ -17,6 +17,7 @@ public class BestiaryMenuReader {
     private static final Pattern OVERALL_PROGRESS_PATTERN = Pattern.compile("Overall Progress:");
     private static final Pattern FRACTION_PATTERN = Pattern.compile("^([\\d,.]+[kKmM]?)/([\\d,.]+[kKmM]?)$");
     private static final Pattern KILLS_PATTERN = Pattern.compile("(?:Kills|Catches):\\s*([\\d,]+)");
+    private static final Pattern CAP_TIER_PATTERN = Pattern.compile("Capped at Tier\\s+([IVXLCDM]+)");
 
     /** Parse a kill count that may use k/m suffix (e.g. "4k" → 4000, "1.5k" → 1500). */
     private static long parseCount(String s) {
@@ -34,6 +35,27 @@ public class BestiaryMenuReader {
     private static final Pattern ROMAN_SUFFIX = Pattern.compile(
             "\\s+(X{0,2}(?:IX|IV|V?I{0,3}))$"
     );
+
+    /** Converts a roman numeral string to an int. Returns 0 on invalid input. */
+    private static int fromRoman(String roman) {
+        int result = 0, prev = 0;
+        for (int i = roman.length() - 1; i >= 0; i--) {
+            int curr;
+            switch (roman.charAt(i)) {
+                case 'I': curr = 1;    break;
+                case 'V': curr = 5;    break;
+                case 'X': curr = 10;   break;
+                case 'L': curr = 50;   break;
+                case 'C': curr = 100;  break;
+                case 'D': curr = 500;  break;
+                case 'M': curr = 1000; break;
+                default:  return 0;
+            }
+            result += (curr < prev) ? -curr : curr;
+            prev = curr;
+        }
+        return result;
+    }
 
     public static void register() {
         ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
@@ -166,6 +188,7 @@ public class BestiaryMenuReader {
 
             long currentKills = -1;
             long maxKills = -1;
+            int capTier = -1;
             boolean nextLineIsFraction = false;
             List loreLines = new ArrayList(); // for skip diagnostics
 
@@ -207,11 +230,26 @@ public class BestiaryMenuReader {
                         } catch (NumberFormatException ignored) {}
                     }
                 }
+
+                // Parse "Capped at Tier XV" to know the mob's max tier number
+                if (capTier < 0) {
+                    Matcher capMatcher = CAP_TIER_PATTERN.matcher(lineStr);
+                    if (capMatcher.find()) {
+                        int t = fromRoman(capMatcher.group(1).trim());
+                        if (t > 0) capTier = t;
+                    }
+                }
             }
 
             if (currentKills >= 0 && maxKills > 0) {
                 String canonicalCategory = resolveCanonicalCategory(mobName, category);
+
                 BestiaryData.saveMob(canonicalCategory, mobName, currentKills, maxKills);
+                // Store the cap tier so ChatListener can fire the MAX popup the moment
+                // the chat message "Mob XIV ➡ XV" arrives and XV == capTier
+                if (capTier > 0) {
+                    BestiaryData.saveCapTier(canonicalCategory, mobName, capTier);
+                }
                 savedAny = true;
                 savedNames.add(mobName);
             } else {

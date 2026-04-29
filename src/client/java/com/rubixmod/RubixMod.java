@@ -56,7 +56,7 @@ public class RubixMod implements ClientModInitializer {
         // Register mining features
         LittlefootTracker.register();
 
-        // Register entity glow manager (Littlefoot + HUD mob shape-matched outlines)
+        // Register entity glow manager (tracks which entities should glow)
         EntityGlowManager.register();
 
         // Register HUD rendering (handles both bestiary HUD, tier-up popups, and mining overlays)

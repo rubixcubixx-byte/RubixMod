@@ -9,6 +9,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.Entity;
 
 public class RubixCommand {
 
@@ -72,6 +73,33 @@ public class RubixCommand {
                                             Component.literal("§aRubixMod: HUD is " +
                                                     (RubixConfig.get().hudEnabled ? "§aENABLED" : "§cDISABLED"))
                                     );
+                                    return 1;
+                                })
+                        )
+                        .then(ClientCommandManager.literal("entdebug")
+                                .executes(context -> {
+                                    Minecraft client = Minecraft.getInstance();
+                                    if (client.level == null || client.player == null) return 0;
+                                    context.getSource().sendFeedback(Component.literal("§e--- Nearby entities (<=16 blocks) ---"));
+                                    int count = 0;
+                                    for (Entity e : client.level.entitiesForRendering()) {
+                                        if (e.distanceTo(client.player) > 16) continue;
+                                        if (e == client.player) continue;
+                                        String type = e.getType().toShortString();
+                                        String custom = e.hasCustomName()
+                                                ? e.getCustomName().getString() : "(none)";
+                                        String display = e.getDisplayName().getString();
+                                        boolean invisible = e.isInvisible();
+                                        context.getSource().sendFeedback(Component.literal(
+                                                "§7[" + type + "] §fcustom=§a" + custom
+                                                + " §fdisplay=§b" + display
+                                                + (invisible ? " §c(invis)" : "")));
+                                        if (++count >= 20) {
+                                            context.getSource().sendFeedback(Component.literal("§c(truncated at 20)"));
+                                            break;
+                                        }
+                                    }
+                                    if (count == 0) context.getSource().sendFeedback(Component.literal("§cNo entities found."));
                                     return 1;
                                 })
                         )

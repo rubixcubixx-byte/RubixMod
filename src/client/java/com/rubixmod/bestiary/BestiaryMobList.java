@@ -159,6 +159,11 @@ public class BestiaryMobList {
                 "Titanoboa", "Trash Gobbler"
         ));
 
+        FISHING_SUBCATEGORY_KEYS.add("Fishing > Spooky Festival");
+        FISHING_SUBCATEGORIES.put("Fishing > Spooky Festival", Arrays.asList(
+                "Grim Reaper", "Nightmare", "Phantom Fisher", "Scarecrow", "Werewolf"
+        ));
+
         // --- Mythological Creatures ---
         CATEGORIES.put("Mythological Creatures", Arrays.asList(
                 "Cretan Bull", "Gaia Construct", "Harpy", "King Minos",

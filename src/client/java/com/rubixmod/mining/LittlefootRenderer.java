@@ -63,7 +63,6 @@ public class LittlefootRenderer {
         Minecraft client = Minecraft.getInstance();
         if (client.level == null) return;
 
-        // Camera position — needed to translate from world coords to render coords
         Vec3 cam = client.gameRenderer.getMainCamera().position();
 
         PoseStack ps = context.matrices();
@@ -75,19 +74,10 @@ public class LittlefootRenderer {
         PoseStack.Pose pose = ps.last();
 
         for (Entity entity : targets) {
-            AABB bb     = entity.getBoundingBox().inflate(0.06);
-            Vec3 center = entity.getBoundingBox().getCenter();
+            AABB bb = entity.getBoundingBox().inflate(0.06);
 
             // ── Bounding-box outline (x-ray, draws through walls) ────────────
             drawBox(pose, lines, bb, CR, CG, CB, 255, 3.0f);
-
-            // ── Tracer line: crosshair (camera eye) → entity centre ──────────
-            // cam is the camera's world position, which after our translate(-cam)
-            // lands at render-space (0,0,0) — exactly the crosshair origin.
-            drawLine(pose, lines,
-                    (float) cam.x, (float) cam.y, (float) cam.z,
-                    (float) center.x, (float) center.y, (float) center.z,
-                    CR, CG, CB, 200, 2.0f);
         }
 
         ps.popPose();

@@ -79,6 +79,21 @@ public class TabListBestiaryReader {
         return tierData.get(trackedKey);
     }
 
+    /**
+     * Marks a mob as already having fired the MAX popup this session.
+     * Called by BestiaryMenuReader and ChatListener to prevent double-firing.
+     */
+    public static void markMaxed(String trackedKey) {
+        maxedThisSession.add(trackedKey);
+    }
+
+    /**
+     * Returns true if the MAX popup has already been fired for this mob this session.
+     */
+    public static boolean isMaxed(String trackedKey) {
+        return maxedThisSession.contains(trackedKey);
+    }
+
     // ── Registration ──────────────────────────────────────────────────────────
 
     public static void register() {
