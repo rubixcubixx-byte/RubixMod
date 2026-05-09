@@ -57,6 +57,14 @@ public class EntityGlowManager {
      */
     private static final Map<UUID, String> entityGlowCache = new HashMap<>();
 
+    /**
+     * Tracks which ArmorStand UUID confirmed each cached entity.
+     * When that ArmorStand despawns (its mob died), the entity's cache entry
+     * is evicted so unrelated nearby mobs (e.g. a Silverfish spawning where a
+     * Spider just died) don't inherit the glow.
+     */
+    private static final Map<UUID, UUID> entityArmorStand = new HashMap<>();
+
     // -----------------------------------------------------------------------
     // Instant entity-load handler
     // -----------------------------------------------------------------------
@@ -82,6 +90,8 @@ public class EntityGlowManager {
                 int color = PALETTE[i % PALETTE.length];
                 // Prefer an already-cached entity so a mob jumping on top can't steal
                 // the match. Fall back to raw closest only if no cached entity is nearby.
+                // Either way, require isLikelyOwner so e.g. a Silverfish with its own
+                // ArmorStand 0.5 blocks above it is never matched to a Spider's ArmorStand.
                 Entity match = null;
                 double matchDist = 4.0;
                 for (Entity nearby : level.entitiesForRendering()) {
@@ -89,6 +99,7 @@ public class EntityGlowManager {
                     if (isRealPlayer(client, nearby)) continue;
                     double d = nearby.distanceTo(armorStand);
                     if (d >= 4.0) continue;
+                    if (!isLikelyOwner(nearby, armorStand, level.entitiesForRendering())) continue;
                     boolean cached = mobName.equals(entityGlowCache.get(nearby.getUUID()));
                     if (cached && d < matchDist) { matchDist = d; match = nearby; }
                 }
@@ -97,11 +108,14 @@ public class EntityGlowManager {
                         if (nearby instanceof ArmorStand) continue;
                         if (isRealPlayer(client, nearby)) continue;
                         double d = nearby.distanceTo(armorStand);
+                        if (d >= 4.0) continue;
+                        if (!isLikelyOwner(nearby, armorStand, level.entitiesForRendering())) continue;
                         if (d < matchDist) { matchDist = d; match = nearby; }
                     }
                 }
                 if (match != null) {
                     entityGlowCache.put(match.getUUID(), mobName);
+                    entityArmorStand.put(match.getUUID(), armorStand.getUUID());
                     if (match instanceof RubixEntityGlowAccess glow) {
                         glow.rubix$setGlowing(true, color, true);
                     }
@@ -135,6 +149,7 @@ public class EntityGlowManager {
             if (!(entity instanceof RubixEntityGlowAccess glow)) return;
 
             int matchIdx = -1;
+            UUID matchedAsUUID = null;
 
             // 1. Direct name on the entity.
             String eName = strippedName(entity);
@@ -153,7 +168,11 @@ public class EntityGlowManager {
                     String asName = strippedName(as);
                     if (asName == null) continue;
                     for (int i = 0; i < hudNames.size(); i++) {
-                        if (matchesMobName(asName, hudNames.get(i))) { matchIdx = i; break outer; }
+                        if (matchesMobName(asName, hudNames.get(i))) {
+                            matchIdx = i;
+                            matchedAsUUID = as.getUUID();
+                            break outer;
+                        }
                     }
                 }
             }
@@ -170,6 +189,7 @@ public class EntityGlowManager {
 
             if (matchIdx >= 0) {
                 entityGlowCache.put(entity.getUUID(), hudNames.get(matchIdx));
+                if (matchedAsUUID != null) entityArmorStand.put(entity.getUUID(), matchedAsUUID);
                 glow.rubix$setGlowing(true, PALETTE[matchIdx % PALETTE.length], true);
             }
         }
@@ -201,6 +221,9 @@ public class EntityGlowManager {
                         // Prefer an already-cached entity (the one we previously identified as
                         // this mob type) so a different mob jumping on top can't steal the match.
                         // Fall back to the raw closest entity only if no cached one is nearby.
+                        // Either way, require isLikelyOwner — every Hypixel mob has its OWN
+                        // ArmorStand above it, so any entity whose closest ArmorStand is NOT
+                        // this one belongs to a different mob and must be excluded.
                         Entity match = null;
                         double matchDist = 4.0;
                         for (Entity nearby : client.level.entitiesForRendering()) {
@@ -208,6 +231,7 @@ public class EntityGlowManager {
                             if (isRealPlayer(client, nearby)) continue;
                             double d = nearby.distanceTo(as);
                             if (d >= 4.0) continue;
+                            if (!isLikelyOwner(nearby, as, client.level.entitiesForRendering())) continue;
                             boolean cached = hudNames.get(i).equals(entityGlowCache.get(nearby.getUUID()));
                             if (cached && d < matchDist) { matchDist = d; match = nearby; }
                         }
@@ -216,10 +240,15 @@ public class EntityGlowManager {
                                 if (nearby instanceof ArmorStand) continue;
                                 if (isRealPlayer(client, nearby)) continue;
                                 double d = nearby.distanceTo(as);
+                                if (d >= 4.0) continue;
+                                if (!isLikelyOwner(nearby, as, client.level.entitiesForRendering())) continue;
                                 if (d < matchDist) { matchDist = d; match = nearby; }
                             }
                         }
-                        if (match != null) armorStandMatches.put(match.getUUID(), i);
+                        if (match != null) {
+                            armorStandMatches.put(match.getUUID(), i);
+                            entityArmorStand.put(match.getUUID(), as.getUUID());
+                        }
                         break;
                     }
                 }
@@ -290,8 +319,25 @@ public class EntityGlowManager {
             glow.rubix$setGlowing(false, 0, false);
         }
 
-        // Evict cache entries for entities no longer in render range / despawned.
-        entityGlowCache.keySet().removeIf(uuid -> !seenThisTick.contains(uuid));
+        // Build the set of ArmorStand UUIDs currently visible.
+        Set<UUID> seenArmorStands = new HashSet<>();
+        for (Entity e : client.level.entitiesForRendering()) {
+            if (e instanceof ArmorStand) seenArmorStands.add(e.getUUID());
+        }
+
+        // Evict cache entries when:
+        //  - the entity left render range / despawned, OR
+        //  - the ArmorStand that confirmed it has despawned (its mob died).
+        //    This prevents a Silverfish (or any unrelated mob) spawning where a
+        //    tracked mob just died from inheriting the dead mob's glow.
+        entityGlowCache.keySet().removeIf(uuid -> {
+            if (!seenThisTick.contains(uuid)) return true;
+            UUID asUUID = entityArmorStand.get(uuid);
+            return asUUID != null && !seenArmorStands.contains(asUUID);
+        });
+
+        // Keep entityArmorStand in sync with entityGlowCache.
+        entityArmorStand.keySet().retainAll(entityGlowCache.keySet());
     }
 
     // -----------------------------------------------------------------------
@@ -323,6 +369,27 @@ public class EntityGlowManager {
         if (entity == client.player) return true;
         return client.getConnection() != null
                 && client.getConnection().getPlayerInfo(entity.getUUID()) != null;
+    }
+
+    /**
+     * Returns true if this entity is likely the "owner" of the given ArmorStand.
+     *
+     * Every Hypixel mob has its OWN ArmorStand floating directly above it (0.5–1.5 blocks).
+     * If a different ArmorStand is closer to the entity than the one we're trying to match,
+     * this entity belongs to that other ArmorStand — not ours.
+     *
+     * Example: a Silverfish has its own ArmorStand 0.5 blocks above it. A Spider's ArmorStand
+     * is 1.2 blocks above the same spot. The Silverfish's closest ArmorStand is its own,
+     * so isLikelyOwner(silverfish, spiderArmorStand) returns false → Silverfish excluded.
+     */
+    private static boolean isLikelyOwner(Entity entity, Entity armorStand, Iterable<Entity> entities) {
+        double distToTarget = entity.distanceTo(armorStand);
+        for (Entity other : entities) {
+            if (!(other instanceof ArmorStand)) continue;
+            if (other == armorStand) continue;
+            if (entity.distanceTo(other) < distToTarget) return false;
+        }
+        return true;
     }
 
     /**
