@@ -1,5 +1,6 @@
 package com.rubixmod.gui;
 
+import com.rubixmod.bestiary.BestiaryData;
 import com.rubixmod.bestiary.BestiaryMobList;
 import com.rubixmod.config.RubixConfig;
 import net.minecraft.client.Minecraft;
@@ -174,55 +175,108 @@ public class BestiaryHudEditorScreen extends Screen {
         dropdownItems.clear();
         List tracked = RubixConfig.get().trackedMobs;
 
-        // Build dropdown from BestiaryMobList — always shows all mobs regardless of scan state
+        // Track which categories we've already added so the dynamic section doesn't duplicate them
+        java.util.Set seenCategories = new java.util.HashSet();
+
+        // ── Hardcoded categories (BestiaryMobList), merged with dynamically discovered mobs ──
         for (Object catObj : BestiaryMobList.CATEGORIES.keySet()) {
             String cat = (String) catObj;
             List mobs = (List) BestiaryMobList.CATEGORIES.get(cat);
 
             if (cat.equals("Fishing")) {
-                // Fishing is a top-level collapsible that contains subcategory dropdowns
+                seenCategories.add("Fishing");
                 dropdownItems.add(new String[]{"category", "Fishing"});
                 if (expandedCategories.contains("Fishing")) {
+                    java.util.Set seenFishingSubs = new java.util.HashSet();
+
+                    // Hardcoded fishing subcategories, each merged with BestiaryData mobs
                     for (Object subKeyObj : BestiaryMobList.FISHING_SUBCATEGORY_KEYS) {
                         String subKey = (String) subKeyObj;
+                        seenFishingSubs.add(subKey);
+                        seenCategories.add(subKey);
                         String subName = subKey.substring("Fishing > ".length());
                         List subMobs = (List) BestiaryMobList.FISHING_SUBCATEGORIES.get(subKey);
 
+                        java.util.LinkedHashSet allSubMobs = mergedMobs(subMobs, BestiaryData.getMobsInCategory(subKey));
+
                         boolean hasUntracked = false;
-                        for (Object mobObj : subMobs) {
-                            if (!tracked.contains(subKey + " > " + mobObj)) { hasUntracked = true; break; }
+                        for (Object mob : allSubMobs) {
+                            if (!tracked.contains(subKey + " > " + mob)) { hasUntracked = true; break; }
                         }
                         if (!hasUntracked) continue;
 
                         dropdownItems.add(new String[]{"fishing_sub", subKey, subName});
                         if (expandedCategories.contains(subKey)) {
-                            for (Object mobObj : subMobs) {
+                            for (Object mobObj : allSubMobs) {
                                 String mob = (String) mobObj;
                                 String key = subKey + " > " + mob;
-                                if (!tracked.contains(key)) {
-                                    dropdownItems.add(new String[]{"mob", key, mob});
-                                }
+                                if (!tracked.contains(key)) dropdownItems.add(new String[]{"mob", key, mob});
+                            }
+                        }
+                    }
+
+                    // Dynamically discovered fishing subcategories not in the hardcoded list
+                    for (Object dataCatObj : BestiaryData.getCategories()) {
+                        String dataCat = (String) dataCatObj;
+                        if (!dataCat.startsWith("Fishing > ") || seenFishingSubs.contains(dataCat)) continue;
+                        seenCategories.add(dataCat);
+                        String subName = dataCat.substring("Fishing > ".length());
+                        java.util.Set subMobs = BestiaryData.getMobsInCategory(dataCat);
+                        boolean hasUntracked = false;
+                        for (Object mob : subMobs) {
+                            if (!tracked.contains(dataCat + " > " + mob)) { hasUntracked = true; break; }
+                        }
+                        if (!hasUntracked) continue;
+                        dropdownItems.add(new String[]{"fishing_sub", dataCat, subName});
+                        if (expandedCategories.contains(dataCat)) {
+                            for (Object mobObj : subMobs) {
+                                String mob = (String) mobObj;
+                                String key = dataCat + " > " + mob;
+                                if (!tracked.contains(key)) dropdownItems.add(new String[]{"mob", key, mob});
                             }
                         }
                     }
                 }
             } else {
+                seenCategories.add(cat);
                 if (mobs.isEmpty()) continue;
+
+                // Merge hardcoded mob list with anything discovered via /bestiary scan
+                java.util.LinkedHashSet allMobs = mergedMobs(mobs, BestiaryData.getMobsInCategory(cat));
+
                 boolean hasUntracked = false;
-                for (Object mobObj : mobs) {
-                    if (!tracked.contains(cat + " > " + mobObj)) { hasUntracked = true; break; }
+                for (Object mob : allMobs) {
+                    if (!tracked.contains(cat + " > " + mob)) { hasUntracked = true; break; }
                 }
                 if (!hasUntracked) continue;
 
                 dropdownItems.add(new String[]{"category", cat});
                 if (expandedCategories.contains(cat)) {
-                    for (Object mobObj : mobs) {
+                    for (Object mobObj : allMobs) {
                         String mob = (String) mobObj;
                         String key = cat + " > " + mob;
-                        if (!tracked.contains(key)) {
-                            dropdownItems.add(new String[]{"mob", key, mob});
-                        }
+                        if (!tracked.contains(key)) dropdownItems.add(new String[]{"mob", key, mob});
                     }
+                }
+            }
+        }
+
+        // ── Dynamically discovered categories not in the hardcoded list at all ──
+        for (Object catObj : BestiaryData.getCategories()) {
+            String cat = (String) catObj;
+            if (seenCategories.contains(cat) || cat.startsWith("Fishing > ")) continue;
+            java.util.Set mobs = BestiaryData.getMobsInCategory(cat);
+            boolean hasUntracked = false;
+            for (Object mob : mobs) {
+                if (!tracked.contains(cat + " > " + mob)) { hasUntracked = true; break; }
+            }
+            if (!hasUntracked) continue;
+            dropdownItems.add(new String[]{"category", cat});
+            if (expandedCategories.contains(cat)) {
+                for (Object mobObj : mobs) {
+                    String mob = (String) mobObj;
+                    String key = cat + " > " + mob;
+                    if (!tracked.contains(key)) dropdownItems.add(new String[]{"mob", key, mob});
                 }
             }
         }
@@ -272,6 +326,21 @@ public class BestiaryHudEditorScreen extends Screen {
         }
 
         g.disableScissor();
+    }
+
+    /**
+     * Returns a LinkedHashSet containing all mobs from the hardcoded list followed by
+     * any extra mobs found in BestiaryData that aren't already present (case-insensitive).
+     */
+    private static java.util.LinkedHashSet mergedMobs(java.util.Collection hardcoded,
+                                                       java.util.Collection discovered) {
+        java.util.LinkedHashSet result = new java.util.LinkedHashSet();
+        java.util.Set seen = new java.util.HashSet();
+        for (Object m : hardcoded) { result.add(m); seen.add(((String) m).toLowerCase()); }
+        for (Object m : discovered) {
+            if (seen.add(((String) m).toLowerCase())) result.add(m);
+        }
+        return result;
     }
 
     private void drawBorder(GuiGraphics g, int x1, int y1, int x2, int y2, int color) {

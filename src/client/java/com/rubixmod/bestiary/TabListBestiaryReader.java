@@ -266,6 +266,8 @@ public class TabListBestiaryReader {
     /** Returns every (category, canonicalMobName) pair that matches the given mob name. */
     private static List<String[]> findAllCategoryAndMob(String mobName) {
         List<String[]> results = new java.util.ArrayList<>();
+
+        // Search the hardcoded list first
         for (Object catObj : BestiaryMobList.CATEGORIES.keySet()) {
             String cat = (String) catObj;
             if (cat.equals("Fishing")) continue;
@@ -283,6 +285,21 @@ public class TabListBestiaryReader {
                 if (mob.equalsIgnoreCase(mobName)) results.add(new String[]{subKey, mob});
             }
         }
+
+        // Also search BestiaryData for mobs discovered dynamically via the /bestiary menu
+        // (covers any new mobs or categories Hypixel adds that aren't in the hardcoded list yet)
+        if (results.isEmpty()) {
+            for (Object catObj : BestiaryData.getCategories()) {
+                String cat = (String) catObj;
+                for (Object mobObj : BestiaryData.getMobsInCategory(cat)) {
+                    String mob = (String) mobObj;
+                    if (mob.equalsIgnoreCase(mobName)) {
+                        results.add(new String[]{cat, mob});
+                    }
+                }
+            }
+        }
+
         return results;
     }
 }

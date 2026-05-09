@@ -86,6 +86,40 @@ public class BestiaryData {
     }
 
     /**
+     * Replaces all mob data for a category with exactly the mobs in the provided buffer
+     * (mobName -> [currentKills, maxKills, capTier]).
+     * Adds new mobs, updates existing ones, and removes mobs no longer present.
+     * Returns the set of mob names that existed before but are no longer in the category.
+     */
+    public static Set replaceCategory(String category, Map buffer) {
+        Set removed = new LinkedHashSet();
+
+        // Collect previously stored mobs that are no longer on screen
+        Map existing = (Map) data.get(category);
+        if (existing != null) {
+            for (Object key : new ArrayList(existing.keySet())) {
+                if (!buffer.containsKey(key)) removed.add(key);
+            }
+        }
+
+        // Build the new category data directly from the scan buffer
+        Map newCatData = new LinkedHashMap();
+        for (Object entryObj : buffer.entrySet()) {
+            java.util.Map.Entry entry = (java.util.Map.Entry) entryObj;
+            String mobName = (String) entry.getKey();
+            long[] vals = (long[]) entry.getValue(); // [current, max, capTier]
+            List kills = new ArrayList();
+            kills.add(vals[0]);
+            kills.add(vals[1]);
+            if (vals.length > 2 && vals[2] > 0) kills.add(vals[2]);
+            newCatData.put(mobName, kills);
+        }
+        data.put(category, newCatData);
+
+        return removed;
+    }
+
+    /**
      * Get the stored cap tier for a mob.
      * Returns -1 if the cap tier has not been stored yet (mob not yet seen in /bestiary menu).
      */
